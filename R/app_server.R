@@ -284,26 +284,4 @@ app_server <- function(input, output, session) {
     showNotification("Project loaded successfully.", type = "message")
   })
 
-  # ============================================================================
-  # LLAMADA AL MÓDULO EXPORTADOR
-  # ============================================================================
-  mod_code_export_server(
-    id = "code_export",
-    constructs_rv = constructs_rv,
-    relations_rv  = relations_rv,
-
-    dataset_name_rv = reactive({
-      req(input$data_file)
-      input$data_file$name
-    }),
-    omission_code     = reactive({ input$omission_code }),
-    missing_treatment = reactive({ input$missing_treatment }),
-    approach_weights_rv        = reactive({ input$approach_weights }),
-    approach_paths_rv          = reactive({ input$approach_paths }),     # <-- NUEVO
-    pls_weight_scheme_inner_rv = reactive({ input$pls_weight_scheme_inner }), # <-- NUEVO
-    disattenuate_rv            = reactive({ input$disattenuate }),
-    resample_method_rv      = reactive({ input$resample_method }),
-    n_boot_rv               = reactive({ input$n_boot }),
-    handle_inadmissibles_rv = reactive({ input$handle_inadmissibles })
-  )
 }
