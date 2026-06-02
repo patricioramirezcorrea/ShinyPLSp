@@ -139,7 +139,7 @@ Launch the application:
 ```r
 library(ShinyPLSp)
 
-run_ShinyPLSp()
+run_app()
 ```
 
 ***
