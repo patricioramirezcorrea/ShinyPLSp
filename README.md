@@ -2,7 +2,7 @@
 
 ### Advanced PLS-SEM Analysis in R Through an Interactive Shiny Interface
 
-ShinyPLSp is an open-source R package that provides an interactive environment for conducting **Partial Least Squares Structural Equation Modeling (PLS-SEM)**. Designed for researchers, academics, and data analysts, the package integrates model specification, estimation, validation, segmentation, performance analysis, and reproducible reporting within a unified graphical interface.
+ShinyPLSp is an open-source R package that provides an interactive environment for conducting **Partial Least Squares Structural Equation Modeling (PLS-SEM)**. Designed for researchers, academics, and data analysts, the package integrates model specification, estimation, validation, segmentation, and performance analysis within a unified graphical interface.
 
 ShinyPLSp combines the methodological rigor of the **cSEM** ecosystem with advanced segmentation capabilities based on **PATHMOX**, allowing users to perform sophisticated analyses without extensive programming experience.
 
@@ -94,22 +94,6 @@ Advanced heterogeneity detection through:
 
 * Terminal-node SEM evaluation
 
-### Reproducible Research
-
-ShinyPLSp automatically generates native R code corresponding to:
-
-* Data preparation procedures
-
-* Construct definitions
-
-* Structural relations
-
-* Estimation settings
-
-* Resampling configurations
-
-Researchers can export the generated script and include it as supplementary material to ensure full transparency and reproducibility.
-
 ### Project Management
 
 * Save complete projects as `.rds`
@@ -180,8 +164,6 @@ Input datasets must satisfy the following conditions:
 
 9. Perform PATHMOX segmentation (optional)
 
-10. Export reports and reproducible R code
-
 ***
 
 ## Citation
@@ -218,8 +200,11 @@ Researchers should not rely solely on automated statistical outputs. Results mus
 
 ## Author
 
-**Patricio Ramírez-Correa**
+Patricio Ramírez-Correa
+
 Professor and Researcher
+
 Universidad Católica del Norte
+
 Chile
 
