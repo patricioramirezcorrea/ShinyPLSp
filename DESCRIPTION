@@ -1,11 +1,10 @@
 Package: ShinyPLSp
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Title: Advanced PLS-SEM Analysis in R Through an Interactive Shiny Interface
+Version: 1.0.0.0000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+    person("Patricio", "Ramírez Correa", , "patricio.ramirez@ucn.cl", role = c("aut", "cre"))
+Description: Advanced PLS-SEM Analysis in R Through an Interactive Shiny Interface.
+License: GPL-3
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 8.0.0

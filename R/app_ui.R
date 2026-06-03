@@ -69,7 +69,7 @@ app_ui <- function() {
       div(
         class = "small-muted",
         style = "text-align: center; font-size: 0.82rem; line-height: 1.4;",
-        tags$b("ShinyPLS"), tags$br(),
+        tags$b("ShinyPLSp"), tags$br(),
         "© 2026, Patricio Ramírez Correa.", tags$br(),
         "Open Source Software (GPL-3).", tags$br(),
         tags$span(style = "font-size: 0.75rem;", "Provided 'as is' without warranty.")
