@@ -98,9 +98,66 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
     # ----------------------------------------------------------------------------
     # TABLES
     # ----------------------------------------------------------------------------
-    output$model_fit_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_model_fit(res); if (is.null(df) || nrow(df) == 0) empty_dt("Model fit indices not available.") else standard_dt(df, digits = 3) })
+    output$model_fit_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_model_fit(res)
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("Model fit indices not available."))
+
+      df_fmt <- format_df(df, 3)
+      dt <- datatable(df_fmt, selection = "single", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+
+
+      if ("Value" %in% names(df) && "Index" %in% names(df)) {
+        for (i in seq_len(nrow(df))) {
+          idx <- df$Index[i]
+          val <- df$Value[i]
+          if (is.na(val)) next
+          color <- if (idx == "SRMR") {
+            if (val < 0.08) "#d4edda" else if (val < 0.10) "#fff3cd" else "#f8d7da"
+          } else if (idx == "NFI") {
+            if (val > 0.90) "#d4edda" else if (val > 0.80) "#fff3cd" else "#f8d7da"
+          } else if (idx == "GoF") {
+            if (val > 0.36) "#d4edda" else if (val > 0.25) "#fff3cd" else "#f8d7da"
+          } else {
+            "white"
+          }
+          txt <- if (color == "#d4edda") "#155724" else if (color == "#fff3cd") "#856404" else if (color == "#f8d7da") "#721c24" else "black"
+          dt <- DT::formatStyle(dt, "Value",
+                                valueColumns = "Index",
+                                backgroundColor = DT::styleEqual(idx, color),
+                                color           = DT::styleEqual(idx, txt))
+        }
+      }
+      dt
+    })
+
+
     output$construct_type_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- get_construct_types(res); if (is.null(df) || nrow(df) == 0) empty_dt("Construct types not available.") else standard_dt(df) })
-    output$r2_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_r2(res); if (is.null(df) || nrow(df) == 0) empty_dt("R-squared not available.") else standard_dt(df, digits = 3) })
+
+    output$r2_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_r2(res)
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("R-squared not available."))
+
+      df_fmt <- format_df(df, 3)
+      dt <- datatable(df_fmt, selection = "single", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+
+
+      num_cols <- names(df)[sapply(df, is.numeric)]
+      for (col in num_cols) {
+        dt <- DT::formatStyle(dt, col,
+                              backgroundColor = DT::styleInterval(c(0.13, 0.26),
+                                                                  c("#f8d7da", "#fff3cd", "#d4edda")),
+                              color           = DT::styleInterval(c(0.13, 0.26),
+                                                                  c("#721c24", "#856404", "#155724")))
+      }
+      dt
+    })
+
     output$path_table <- renderDT({
       res <- result_rv()
       if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
@@ -108,13 +165,35 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
       if (is.null(df) || nrow(df) == 0) return(empty_dt("Paths not available."))
       render_dt_with_pval_color(df, digits = 3)
     })
+
     output$loading_table <- renderDT({
       res <- result_rv()
       if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
       df <- extract_loadings(res)
       if (is.null(df) || nrow(df) == 0) return(empty_dt("Loadings not available."))
-      render_dt_with_pval_color(df, digits = 3)
+
+      df_fmt <- format_df(df, 3)
+      dt <- datatable(df_fmt, selection = "single", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+
+
+      est_col <- intersect(names(df), c("Estimate","Loading","loading"))
+      if (length(est_col) > 0)
+        dt <- DT::formatStyle(dt, est_col[1],
+                              backgroundColor = DT::styleInterval(c(0.60, 0.70),
+                                                                  c("#f8d7da", "#fff3cd", "#d4edda")),
+                              color           = DT::styleInterval(c(0.60, 0.70),
+                                                                  c("#721c24", "#856404", "#155724")))
+
+
+      p_cols <- names(df)[grepl("p.*value|^p$|P_value", names(df), ignore.case = TRUE)]
+      for (col in p_cols)
+        dt <- DT::formatStyle(dt, col,
+                              backgroundColor = DT::styleInterval(0.05, c("#d4edda", "white")),
+                              color           = DT::styleInterval(0.05, c("#155724", "black")))
+      dt
     })
+
     output$mm_quality_table <- renderDT({
       res <- result_rv()
       if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
@@ -122,12 +201,12 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
       if (is.null(df) || nrow(df) == 0) return(empty_dt("Quality not available."))
       dt <- datatable(format_df(df, 3), selection = "single", rownames = FALSE,
                       options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
-      # Verde si AVE >= 0.50
+
       if ("AVE" %in% names(df))
         dt <- DT::formatStyle(dt, "AVE",
                               backgroundColor = DT::styleInterval(0.499, c("#fff3cd", "#d4edda")),
                               color           = DT::styleInterval(0.499, c("#856404", "#155724")))
-      # Verde si fiabilidad >= 0.70
+
       for (col in intersect(names(df), c("Cronbach_alpha","Omega_McDonald","rhoC_CR","rhoA")))
         dt <- DT::formatStyle(dt, col,
                               backgroundColor = DT::styleInterval(0.699, c("#fff3cd", "#d4edda")),
@@ -135,8 +214,48 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
       dt
     })
 
-    output$htmt_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_mm_quality(res)$htmt; if (is.null(df) || nrow(df) == 0) empty_dt("HTMT not available.") else standard_dt(df, digits = 3) })
-    output$fornell_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_mm_quality(res)$fornell; if (is.null(df) || nrow(df) == 0) empty_dt("Fornell-Larcker not available.") else standard_dt(df, digits = 3) })
+    output$htmt_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_mm_quality(res)$htmt
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("HTMT not available."))
+
+      df_fmt <- format_df(df, 3)
+      dt <- datatable(df_fmt, selection = "single", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+
+      num_cols <- names(df)[sapply(df, is.numeric)]
+      for (col in num_cols) {
+        dt <- DT::formatStyle(dt, col,
+                              backgroundColor = DT::styleInterval(c(0.85, 0.90),
+                                                                  c("#d4edda", "#fff3cd", "#f8d7da")),
+                              color           = DT::styleInterval(c(0.85, 0.90),
+                                                                  c("#155724", "#856404", "#721c24")))
+      }
+      dt
+    })
+
+    output$fornell_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_mm_quality(res)$fornell
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("Fornell-Larcker not available."))
+
+      df_fmt <- format_df(df, 3)
+      dt <- datatable(df_fmt, selection = "single", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+
+      num_cols <- names(df)[sapply(df, is.numeric)]
+      for (col in num_cols) {
+        dt <- DT::formatStyle(dt, col,
+                              backgroundColor = DT::styleInterval(c(0.70, 0.90),
+                                                                  c("#d4edda", "#fff3cd", "#f8d7da")),
+                              color           = DT::styleInterval(c(0.70, 0.90),
+                                                                  c("#155724", "#856404", "#721c24")))
+      }
+      dt
+    })
+
     output$hypothesis_table <- renderDT({
       res <- result_rv()
       if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
@@ -166,7 +285,6 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
         return(empty_dt("Indirect/total effects not available. Requires bootstrapping and at least one mediated path."))
       render_dt_with_pval_color(df, digits = 3)
     })
-
 
 
     # ----------------------------------------------------------------------------
