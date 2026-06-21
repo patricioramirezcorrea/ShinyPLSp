@@ -108,7 +108,6 @@ Launch the application:
 
 ```r
 library(ShinyPLSp)
-
 run_app()
 ```
 
