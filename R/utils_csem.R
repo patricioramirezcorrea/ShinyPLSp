@@ -44,7 +44,7 @@ collect_recursive_tables <- function(x, patterns) {
 pick_best_table <- function(tbls, relation_type = c("generic", "path", "loading")) {
   relation_type <- match.arg(relation_type)
   if (length(tbls) == 0) return(NULL)
-
+  
   scores <- sapply(tbls, function(obj) {
     df <- as.data.frame(obj, stringsAsFactors = FALSE)
     nms <- names(df)
@@ -63,30 +63,14 @@ pick_best_table <- function(tbls, relation_type = c("generic", "path", "loading"
 normalize_table_source <- function(x, relation_type = c("generic", "path", "loading")) {
   relation_type <- match.arg(relation_type)
   if (is.null(x)) return(NULL)
-
-  if (is.data.frame(x)) {
-    df <- as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE)
-    # Normalizar nombres: espacios y puntos → underscore, limpiar duplicados
-    names(df) <- gsub("[[:space:]]+", "_", names(df))
-    names(df) <- gsub("\\.+",         "_", names(df))
-    names(df) <- gsub("_+",           "_", names(df))
-    names(df) <- gsub("_$",           "",  names(df))
-    return(df)
-  }
-
+  if (is.data.frame(x)) return(as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE))
   if (is.matrix(x)) {
     if (is.numeric(x) && !is.null(rownames(x)) && !is.null(colnames(x))) {
-      if (relation_type == "path")    return(matrix_to_long(x, "Dependent",  "Predictor", "Estimate", drop_zeros = TRUE))
-      if (relation_type == "loading") return(matrix_to_long(x, "Construct",  "Indicator", "Estimate", drop_zeros = TRUE))
+      if (relation_type == "path") return(matrix_to_long(x, "Dependent", "Predictor", "Estimate", drop_zeros = TRUE))
+      if (relation_type == "loading") return(matrix_to_long(x, "Construct", "Indicator", "Estimate", drop_zeros = TRUE))
     }
-    df <- as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE)
-    names(df) <- gsub("[[:space:]]+", "_", names(df))
-    names(df) <- gsub("\\.+",         "_", names(df))
-    names(df) <- gsub("_+",           "_", names(df))
-    names(df) <- gsub("_$",           "",  names(df))
-    return(df)
+    return(as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE))
   }
-
   NULL
 }
 
@@ -124,11 +108,11 @@ parse_paths_table <- function(df) {
   if (is.null(df) || nrow(df) == 0) return(NULL)
   d <- as.data.frame(df, stringsAsFactors = FALSE, check.names = FALSE)
   nms <- names(d)
-
+  
   dep_col <- find_name(nms, c("^Dependent$", "^Target$", "^Endogenous$", "dependent", "target", "endo"))
   pred_col <- find_name(nms, c("^Predictor$", "^Origin$", "^Independent$", "^Exogenous$", "predictor", "origin", "independent", "exogenous"))
   rel_col <- find_name(nms, c("^Path$", "^Relation$", "^Parameter$", "path", "relation", "parameter"))
-
+  
   dep <- pred <- NULL
   if (!is.na(dep_col) && !is.na(pred_col)) {
     dep <- as.character(d[[dep_col]])
@@ -143,19 +127,19 @@ parse_paths_table <- function(df) {
   } else {
     return(NULL)
   }
-
+  
   est_col <- find_name(nms, c("^Estimate$", "^Est$", "estimate", "original", "beta"))
   se_col  <- find_name(nms, c("^SE$", "std.*error", "standard.*error", "^Std\\. Error$", "std.*err"))
   t_col   <- find_name(nms, c("^t$", "t.*value", "t.*stat"))
   p_col   <- find_name(nms, c("^p$", "p.*value"))
   cil_col <- find_name(nms, c("ci.*low", "ci.*lower", "lower.*ci", "2\\.5", "lower"))
   ciu_col <- find_name(nms, c("ci.*up", "ci.*upper", "upper.*ci", "97\\.5", "upper"))
-
+  
   if (is.na(est_col)) {
     num_candidates <- names(d)[sapply(d, is.numeric)]
     if (length(num_candidates) > 0) est_col <- num_candidates[1]
   }
-
+  
   out <- data.frame(
     Dependent = dep,
     Predictor = pred,
@@ -167,7 +151,7 @@ parse_paths_table <- function(df) {
     CI_high = if (!is.na(ciu_col)) to_num(d[[ciu_col]]) else NA_real_,
     stringsAsFactors = FALSE
   )
-
+  
   keep <- !(is.na(out$Dependent) | is.na(out$Predictor) | out$Dependent == "" | out$Predictor == "")
   out <- out[keep, , drop = FALSE]
   out$key <- paste0(out$Dependent, "|||", out$Predictor)
@@ -180,11 +164,11 @@ parse_loadings_table <- function(df) {
   if (is.null(df) || nrow(df) == 0) return(NULL)
   d <- as.data.frame(df, stringsAsFactors = FALSE, check.names = FALSE)
   nms <- names(d)
-
+  
   con_col <- find_name(nms, c("^Construct$", "^Latent$", "construct", "latent", "factor"))
   ind_col <- find_name(nms, c("^Indicator$", "^Item$", "^Manifest$", "indicator", "item", "manifest"))
   rel_col <- find_name(nms, c("^Loading$", "^Relation$", "^Parameter$", "loading", "relation", "parameter"))
-
+  
   cons <- inds <- NULL
   if (!is.na(con_col) && !is.na(ind_col)) {
     cons <- as.character(d[[con_col]])
@@ -199,19 +183,19 @@ parse_loadings_table <- function(df) {
   } else {
     return(NULL)
   }
-
+  
   est_col <- find_name(nms, c("^Estimate$", "^Loading$", "estimate", "original", "loading"))
   se_col  <- find_name(nms, c("^SE$", "std.*error", "standard.*error", "^Std\\. Error$", "std.*err"))
   t_col   <- find_name(nms, c("^t$", "t.*value", "t.*stat"))
   p_col   <- find_name(nms, c("^p$", "p.*value"))
   cil_col <- find_name(nms, c("ci.*low", "ci.*lower", "lower.*ci", "2\\.5", "lower"))
   ciu_col <- find_name(nms, c("ci.*up", "ci.*upper", "upper.*ci", "97\\.5", "upper"))
-
+  
   if (is.na(est_col)) {
     num_candidates <- names(d)[sapply(d, is.numeric)]
     if (length(num_candidates) > 0) est_col <- num_candidates[1]
   }
-
+  
   out <- data.frame(
     Construct = cons,
     Indicator = inds,
@@ -223,7 +207,7 @@ parse_loadings_table <- function(df) {
     CI_high = if (!is.na(ciu_col)) to_num(d[[ciu_col]]) else NA_real_,
     stringsAsFactors = FALSE
   )
-
+  
   keep <- !(is.na(out$Construct) | is.na(out$Indicator) | out$Construct == "" | out$Indicator == "")
   out <- out[keep, , drop = FALSE]
   out$key <- paste0(out$Construct, "|||", out$Indicator)
@@ -262,15 +246,15 @@ extract_paths <- function(res) {
   if (is.null(res)) return(NULL)
   s <- get_summary_safe(res)
   inf <- get_infer_safe(res)
-
+  
   tbls <- c(
     collect_recursive_tables(s,  c("^Path_estimates$", "^Paths?$", "path.*estimate", "structural.*path")),
     collect_recursive_tables(inf, c("^Path_estimates$", "^Paths?$", "path.*estimate", "structural.*path"))
   )
-
+  
   best <- pick_best_table(tbls, "path")
   best <- normalize_table_source(best, "path")
-
+  
   # Normalizar notación de rutas: "IU ~ PE" -> "PE -> IU"
   if (!is.null(best) && nrow(best) > 0) {
     if ("Name" %in% names(best)) {
@@ -281,7 +265,7 @@ extract_paths <- function(res) {
     }
     return(round_df(best, 3))
   }
-
+  
   if (!is.null(res$Estimates) && !is.null(res$Estimates$Path_estimates)) {
     df <- matrix_to_long(
       res$Estimates$Path_estimates,
@@ -301,16 +285,16 @@ extract_loadings <- function(res) {
   if (is.null(res)) return(NULL)
   s <- get_summary_safe(res)
   inf <- get_infer_safe(res)
-
+  
   tbls <- c(
     collect_recursive_tables(s, c("^Loading_estimates$", "^Loadings?$", "loading.*estimate", "outer.*loading")),
     collect_recursive_tables(inf, c("^Loading_estimates$", "^Loadings?$", "loading.*estimate", "outer.*loading"))
   )
-
+  
   best <- pick_best_table(tbls, "loading")
   best <- normalize_table_source(best, "loading")
   if (!is.null(best) && nrow(best) > 0) return(round_df(best, 3))
-
+  
   if (!is.null(res$Estimates) && !is.null(res$Estimates$Loading_estimates)) {
     df <- matrix_to_long(res$Estimates$Loading_estimates, row_name = "Construct", col_name = "Indicator", value_name = "Estimate", drop_zeros = TRUE)
     df <- parse_loadings_table(df)
@@ -322,10 +306,10 @@ extract_loadings <- function(res) {
 extract_model_fit <- function(res) {
   b <- get_assess_safe(res)
   if (is.null(b)) return(NULL)
-
+  
   fit_names <- c("SRMR", "d_ULS", "d_G", "dL", "RMS_theta", "GoF", "NFI", "GFI")
   out <- data.frame(Index = character(), Value = numeric(), stringsAsFactors = FALSE)
-
+  
   recurse_fit <- function(x, nm = "") {
     if (is.null(x)) return(NULL)
     if (is.numeric(x) && length(x) == 1 && nzchar(nm) && nm %in% fit_names) {
@@ -342,7 +326,7 @@ extract_model_fit <- function(res) {
       for (i in seq_along(x)) recurse_fit(x[[i]], nms[i])
     }
   }
-
+  
   recurse_fit(b)
   if (nrow(out) == 0) return(NULL)
   out <- out[!duplicated(out$Index), , drop = FALSE]
@@ -352,43 +336,25 @@ extract_model_fit <- function(res) {
 extract_mm_quality <- function(res) {
   b <- get_assess_safe(res)
   if (is.null(b)) return(list(quality = NULL, htmt = NULL, fornell = NULL))
-
-
+  
   quality <- merge_by_first_col(list(
-    if (!is.null(b$AVE))                                  named_to_df(b$AVE,                                  "Construct", "AVE")           else NULL,
-    if (!is.null(rel$Cronbachs_alpha))                    named_to_df(rel$Cronbachs_alpha,                    "Construct", "Cronbach_alpha") else NULL,
-    if (!is.null(rel$Joereskogs_rho))                     named_to_df(rel$Joereskogs_rho,                     "Construct", "rhoC_CR")        else NULL,
-    if (!is.null(rel$`Dijkstra-Henselers_rho_A`))         named_to_df(rel$`Dijkstra-Henselers_rho_A`,         "Construct", "rhoA")           else NULL
+    if (!is.null(b$AVE)) named_to_df(b$AVE, "Construct", "AVE") else NULL,
+    if (!is.null(b$Reliability$Cronbachs_alpha)) named_to_df(b$Reliability$Cronbachs_alpha, "Construct", "Cronbach_alpha") else NULL,
+    if (!is.null(b$Reliability$Joereskogs_rho)) named_to_df(b$Reliability$Joereskogs_rho, "Construct", "Joreskogs_rho") else NULL,
+    if (!is.null(b$Reliability$`Dijkstra-Henselers_rho_A`)) named_to_df(b$Reliability$`Dijkstra-Henselers_rho_A`, "Construct", "rho_A") else NULL
   ))
-
-
+  
   htmt <- NULL
   if (!is.null(b$HTMT) && !is.null(b$HTMT$htmts)) {
     htmt <- as.data.frame(b$HTMT$htmts, stringsAsFactors = FALSE, check.names = FALSE)
-    nr <- nrow(htmt)
-    nc <- ncol(htmt)
-    for (i in seq_len(nr)) {
-      for (j in seq_len(nc)) {
-        if (j >= i) htmt[i, j] <- NA
-      }
-    }
-    htmt <- cbind(Construct = rownames(b$HTMT$htmts), htmt, row.names = NULL)
+    htmt <- cbind(Construct = rownames(htmt), htmt, row.names = NULL)
   }
-
+  
   fornell <- NULL
   if (!is.null(b$`Fornell-Larcker`)) {
-    fornell <- as.data.frame(
-      b$`Fornell-Larcker`,
-      stringsAsFactors = FALSE,
-      check.names = FALSE
-    )
-    fornell <- cbind(
-      Construct = rownames(fornell),
-      fornell,
-      row.names = NULL
-    )
+    fornell <- as.data.frame(b$`Fornell-Larcker`, stringsAsFactors = FALSE, check.names = FALSE)
+    fornell <- cbind(Construct = rownames(fornell), fornell, row.names = NULL)
   }
-
+  
   list(quality = round_df(quality, 3), htmt = round_df(htmt, 3), fornell = round_df(fornell, 3))
 }
-
