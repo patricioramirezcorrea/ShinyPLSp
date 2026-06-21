@@ -21,8 +21,7 @@ mod_sem_results_ui <- function(id) {
               nav_panel("Loadings", DTOutput(ns("loading_table"))),
               nav_panel("Measurement quality", DTOutput(ns("mm_quality_table"))),
               nav_panel("HTMT", DTOutput(ns("htmt_table"))),
-              nav_panel("Fornell-Larcker", DTOutput(ns("fornell_table"))),
-              nav_panel("Indirect & Total effects", DTOutput(ns("effects_table")))
+              nav_panel("Fornell-Larcker", DTOutput(ns("fornell_table")))
             ),
 
             card(
@@ -239,87 +238,7 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
       if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
       df <- extract_mm_quality(res)$fornell
       if (is.null(df) || nrow(df) == 0) return(empty_dt("Fornell-Larcker not available."))
-
-      df_fmt <- format_df(df, 3)
-
-      # Columnas numéricas (constructos)
-      num_cols <- names(df)[sapply(df, is.numeric)]
-
-      # Índices de columnas en DT (JS usa base 0; la primera columna "Construct" es 0)
-      js_col_idx <- setNames(seq_along(names(df)) - 1, names(df))
-
-      # Vector con diagonales por constructo
-      diag_vals <- sapply(num_cols, function(cn) {
-        row_i <- which(df$Construct == cn)
-        if (length(row_i) == 1) as.numeric(df[row_i, cn]) else NA_real_
-      })
-
-      # Pasar diagonales a JS como objeto
-      diag_js <- paste0(
-        "{",
-        paste(sprintf('"%s": %s', names(diag_vals),
-                      ifelse(is.na(diag_vals), "null", format(diag_vals, scientific = FALSE))),
-              collapse = ", "),
-        "}"
-      )
-
-      callback_js <- JS(sprintf("
-    var diagVals = %s;
-    table.rows().every(function(rowIdx, tableLoop, rowLoop) {
-      var data = this.data();
-      var rowConstruct = data[0];
-      var rowNode = this.node();
-
-      for (var j = 1; j < data.length; j++) {
-        var colName = table.column(j).header().textContent.trim();
-        var cell = $('td', rowNode).eq(j);
-        var val = parseFloat(data[j]);
-
-        if (isNaN(val)) continue;
-
-        // Diagonal: no colorear
-        if (rowConstruct === colName) {
-          cell.css({'background-color': '', 'color': ''});
-        } else {
-          var diagRow = diagVals[rowConstruct];
-          var diagCol = diagVals[colName];
-          var threshold = Math.min(diagRow, diagCol);
-
-          if (!isNaN(threshold) && val >= threshold) {
-            cell.css({'background-color': '#f8d7da', 'color': '#721c24'});
-          } else {
-            cell.css({'background-color': '#d4edda', 'color': '#155724'});
-          }
-        }
-      }
-    });
-  ", diag_js))
-
-      datatable(
-        df_fmt,
-        selection = "single",
-        rownames = FALSE,
-        options = list(
-          dom = "tip",
-          pageLength = 100,
-          scrollX = TRUE,
-          rowCallback = callback_js
-        )
-      )
-    })
-
-
-    output$effects_table <- renderDT({
-      res <- result_rv()
-      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
-
-      df <- extract_indirect_effects(res)
-      if (is.null(df) || nrow(df) == 0)
-        return(empty_dt("Indirect/total effects not available. Requires bootstrapping and at least one mediated path."))
-
-      df_fmt <- format_df(df, 3)
-      datatable(df_fmt, selection = "single", rownames = FALSE,
-                options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+      standard_dt(df, digits = 3)
     })
 
     # ----------------------------------------------------------------------------

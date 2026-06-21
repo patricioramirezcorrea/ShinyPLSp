@@ -404,115 +404,18 @@ extract_mm_quality <- function(res) {
 
   fornell <- NULL
   if (!is.null(b$`Fornell-Larcker`)) {
-    fornell <- as.data.frame(b$`Fornell-Larcker`, stringsAsFactors = FALSE, check.names = FALSE)
-
-    if (!is.null(b$AVE)) {
-      ave_vals <- b$AVE
-      for (cn in rownames(b$`Fornell-Larcker`)) {
-        if (cn %in% names(ave_vals) && cn %in% colnames(fornell)) {
-          fornell[cn, cn] <- round(sqrt(ave_vals[cn]), 3)
-        }
-      }
-    }
-    nr <- nrow(fornell)
-    nc <- ncol(fornell)
-    for (i in seq_len(nr)) {
-      for (j in seq_len(nc)) {
-        if (j > i) fornell[i, j] <- NA
-      }
-    }
-    fornell <- cbind(Construct = rownames(b$`Fornell-Larcker`), fornell, row.names = NULL)
+    fornell <- as.data.frame(
+      b$`Fornell-Larcker`,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+    fornell <- cbind(
+      Construct = rownames(fornell),
+      fornell,
+      row.names = NULL
+    )
   }
 
   list(quality = round_df(quality, 3), htmt = round_df(htmt, 3), fornell = round_df(fornell, 3))
 }
 
-extract_indirect_effects <- function(res) {
-  if (is.null(res)) return(NULL)
-
-  s <- get_summary_safe(res)
-  if (is.null(s)) return(NULL)
-
-  # Intentar tomar efectos indirectos y totales de summarize()
-  ind <- NULL
-  tot <- NULL
-
-  for (nm in c("Indirect_effects","Indirect_effect","indirect_effects","indirect_effect")) {
-    obj <- s[[nm]]
-    if (is.null(obj) && !is.null(s$Estimates)) obj <- s$Estimates[[nm]]
-    if (!is.null(obj)) {
-      ind <- normalize_table_source(obj, "path")
-      break
-    }
-  }
-
-  for (nm in c("Total_effects","Total_effect","total_effects","total_effect")) {
-    obj <- s[[nm]]
-    if (is.null(obj) && !is.null(s$Estimates)) obj <- s$Estimates[[nm]]
-    if (!is.null(obj)) {
-      tot <- normalize_table_source(obj, "path")
-      break
-    }
-  }
-
-  if (is.null(ind) && is.null(tot)) return(NULL)
-
-  parse_effects <- function(df, type_label) {
-    if (is.null(df) || nrow(df) == 0) return(NULL)
-    nms      <- names(df)
-    dep_col  <- find_name(nms, c("^Dependent$","^Target$","dependent","target","endo"))
-    pred_col <- find_name(nms, c("^Predictor$","^Origin$","predictor","origin","exo","independent"))
-    rel_col  <- find_name(nms, c("^Indirect_effect$","^Total_effect$",
-                                 "^Path$","^Relation$","^Parameter$",
-                                 "path","relation","parameter","Name","effect"))
-    est_col  <- find_name(nms, c("^Estimate$","estimate","original","beta"))
-    se_col   <- find_name(nms, c("^SE$","std.*error","standard.*error","std.*err"))
-    t_col    <- find_name(nms, c("^t$","t.*value","t.*stat"))
-    p_col    <- find_name(nms, c("^p$","p.*value"))
-    cil_col  <- find_name(nms, c("ci.*low","ci.*lower","lower.*ci","2\\.5","lower"))
-    ciu_col  <- find_name(nms, c("ci.*up","ci.*upper","upper.*ci","97\\.5","upper"))
-
-    dep <- pred <- NULL
-    if (!is.na(dep_col) && !is.na(pred_col)) {
-      dep  <- as.character(df[[dep_col]])
-      pred <- as.character(df[[pred_col]])
-    } else if (!is.na(rel_col)) {
-      pairs <- t(vapply(as.character(df[[rel_col]]), parse_path_relation, character(2)))
-      dep  <- pairs[,1]
-      pred <- pairs[,2]
-    } else if (ncol(df) >= 2) {
-      dep  <- as.character(df[[1]])
-      pred <- as.character(df[[2]])
-    } else return(NULL)
-
-    out <- data.frame(
-      Type      = type_label,
-      Predictor = pred,
-      Dependent = dep,
-      Estimate  = if (!is.na(est_col)) to_num(df[[est_col]]) else NA_real_,
-      Std_Error = if (!is.na(se_col))  to_num(df[[se_col]])  else NA_real_,
-      T_value   = if (!is.na(t_col))   to_num(df[[t_col]])   else NA_real_,
-      P_value   = if (!is.na(p_col))   to_num(df[[p_col]])   else NA_real_,
-      CI_low    = if (!is.na(cil_col)) to_num(df[[cil_col]]) else NA_real_,
-      CI_high   = if (!is.na(ciu_col)) to_num(df[[ciu_col]]) else NA_real_,
-      stringsAsFactors = FALSE
-    )
-    keep <- !(is.na(out$Predictor) | is.na(out$Dependent) |
-                out$Predictor == "" | out$Dependent == "")
-    out  <- out[keep, , drop = FALSE]
-    out$Significance <- significance_stars(out$P_value)
-    rownames(out) <- NULL
-    round_df(out, 3)
-  }
-
-  out_ind <- parse_effects(ind, "Indirect")
-  out_tot <- parse_effects(tot, "Total")
-
-  out <- rbind(out_ind, out_tot)
-  if (is.null(out) || nrow(out) == 0) return(NULL)
-
-  out$Relationship <- paste0(out$Predictor, " -> ", out$Dependent)
-  out[, c("Type","Relationship","Predictor","Dependent",
-          "Estimate","Std_Error","T_value","P_value",
-          "CI_low","CI_high","Significance")]
-}
