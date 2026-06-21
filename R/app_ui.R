@@ -54,14 +54,14 @@ app_ui <- function() {
             selectInput("approach_paths", "Path estimation", choices = c("OLS" = "OLS", "2SLS" = "2SLS"), selected = "OLS"),
             selectInput("pls_inner_scheme", "PLS inner weighting", choices = c("Path" = "path", "Centroid" = "centroid", "Factorial"= "factorial"), selected = "path"),
             selectInput("pls_mode_default", "Default outer mode", choices = c("Automatic by construct type" = "auto", "Mode A" = "modeA", "Mode B" = "modeB", "PCA" = "PCA", "Unit" = "unit"), selected = "auto"),
-            checkboxInput("plsc_disattenuate", "Use PLSc correction for reflective constructs", value = TRUE)
+            checkboxInput("plsc_disattenuate", "Use PLSc correction for reflective constructs", value = FALSE)
           )
         ), card(
           card_header("Resampling settings"),
           card_body(
             selectInput("resample_method", "Resample method", choices = c("Bootstrap" = "bootstrap", "Jackknife" = "jackknife", "None" = "none"), selected = "bootstrap"),
             numericInput("n_boot", "Number of resamples", value = 200, min = 0, step = 100),
-            selectInput("handle_inadmissibles", "Handle inadmissibles", choices = c("Replace (repeat until admissible)" = "replace", "Drop (discard inadmissible)" = "drop", "Ignore (retain all)" = "ignore"), selected = "replace")
+            selectInput("handle_inadmissibles", "Handle inadmissibles", choices = c("Replace (repeat until admissible)" = "replace", "Drop (discard inadmissible)" = "drop", "Ignore (retain all)" = "ignore"), selected = "drop")
           )
         ))
       ),
