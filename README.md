@@ -97,8 +97,7 @@ Advanced heterogeneity detection through:
 Install the development version directly from GitHub:
 
 ```r
-install.packages("remotes")
-
+# install.packages("remotes")
 remotes::install_github("patricioramirezcorrea/ShinyPLSp")
 ```
 
