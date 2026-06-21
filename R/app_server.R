@@ -1,4 +1,9 @@
 app_server <- function(input, output, session) {
+
+  session$onSessionEnded(function() {
+    stopApp()
+  })
+
   # ----------------------------------------------------------------------------
   # DECLARACIÓN DE ESTADOS GLOBALES (STATE LIFTING)
   # ----------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 
 mod_sem_results_ui <- function(id) {
   ns <- NS(id)
-  
+
   nav_panel("SEM results",
             layout_columns(
               col_widths = c(3, 3, 3, 3),
@@ -21,9 +21,11 @@ mod_sem_results_ui <- function(id) {
               nav_panel("Loadings", DTOutput(ns("loading_table"))),
               nav_panel("Measurement quality", DTOutput(ns("mm_quality_table"))),
               nav_panel("HTMT", DTOutput(ns("htmt_table"))),
-              nav_panel("Fornell-Larcker", DTOutput(ns("fornell_table")))
+              nav_panel("Fornell-Larcker", DTOutput(ns("fornell_table"))),
+              nav_panel("Hypothesis table",         DTOutput(ns("hypothesis_table"))),
+              nav_panel("Indirect & Total effects", DTOutput(ns("indirect_table")))
             ),
-            
+
             card(
               full_screen = TRUE,
               card_header("Estimated model diagram"),
@@ -36,12 +38,12 @@ mod_sem_results_ui <- function(id) {
               card_header("Detailed results export"),
               card_body(downloadButton(ns("download_excel"), "Export detailed Excel", class = "btn-success btn-compact"))
             ),
-            
+
             card(
               card_header("Model status"),
               card_body(verbatimTextOutput(ns("summary_text")))
             ),
-            
+
             card(
               card_header("Full model statistics (raw output)"),
               card_body(
@@ -54,60 +56,139 @@ mod_sem_results_ui <- function(id) {
 
 mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, analysis_data, analysis_bundle, raw_data_rv, resample_method, n_boot, project_name) {
   moduleServer(id, function(input, output, session) {
-    
+
+    render_dt_with_pval_color <- function(df, p_col_name = "P_value", digits = 3) {
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("No data available."))
+      if (!is.null(digits)) df <- format_df(df, digits)
+      dt <- datatable(df, selection = "single", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+      p_cols <- names(df)[grepl("p.*value|^p$|P_value|_P_value", names(df), ignore.case = TRUE)]
+      for (col in p_cols) {
+        col_idx <- which(names(df) == col)
+        if (length(col_idx) == 1) {
+          dt <- DT::formatStyle(dt, col,
+                                backgroundColor = DT::styleInterval(0.05, c("#d4edda", "white")),
+                                color           = DT::styleInterval(0.05, c("#155724", "black")))
+        }
+      }
+      dt
+    }
+
     # ----------------------------------------------------------------------------
     # METRICS
     # ----------------------------------------------------------------------------
     output$metric_constructs <- renderText({
       length(constructs_rv())
     })
-    
+
     output$metric_relations <- renderText({
       nrow(relations_rv())
     })
-    
+
     output$metric_paths <- renderText({
       res <- result_rv()
       if (is.null(res) || is.null(extract_paths(res))) 0 else nrow(extract_paths(res))
     })
-    
+
     output$metric_r2 <- renderText({
       res <- result_rv()
       if (is.null(res) || is.null(extract_r2(res))) 0 else nrow(extract_r2(res))
     })
-    
+
     # ----------------------------------------------------------------------------
     # TABLES
     # ----------------------------------------------------------------------------
     output$model_fit_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_model_fit(res); if (is.null(df) || nrow(df) == 0) empty_dt("Model fit indices not available.") else standard_dt(df, digits = 3) })
     output$construct_type_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- get_construct_types(res); if (is.null(df) || nrow(df) == 0) empty_dt("Construct types not available.") else standard_dt(df) })
     output$r2_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_r2(res); if (is.null(df) || nrow(df) == 0) empty_dt("R-squared not available.") else standard_dt(df, digits = 3) })
-    output$path_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_paths(res); if (is.null(df) || nrow(df) == 0) empty_dt("Paths not available.") else standard_dt(df, digits = 3) })
-    output$loading_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_loadings(res); if (is.null(df) || nrow(df) == 0) empty_dt("Loadings not available.") else standard_dt(df, digits = 3) })
-    output$mm_quality_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_mm_quality(res)$quality; if (is.null(df) || nrow(df) == 0) empty_dt("Quality not available.") else standard_dt(df, digits = 3) })
+    output$path_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_paths(res)
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("Paths not available."))
+      render_dt_with_pval_color(df, digits = 3)
+    })
+    output$loading_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_loadings(res)
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("Loadings not available."))
+      render_dt_with_pval_color(df, digits = 3)
+    })
+    output$mm_quality_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_mm_quality(res)$quality
+      if (is.null(df) || nrow(df) == 0) return(empty_dt("Quality not available."))
+      dt <- datatable(format_df(df, 3), selection = "single", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+      # Verde si AVE >= 0.50
+      if ("AVE" %in% names(df))
+        dt <- DT::formatStyle(dt, "AVE",
+                              backgroundColor = DT::styleInterval(0.499, c("#fff3cd", "#d4edda")),
+                              color           = DT::styleInterval(0.499, c("#856404", "#155724")))
+      # Verde si fiabilidad >= 0.70
+      for (col in intersect(names(df), c("Cronbach_alpha","Omega_McDonald","rhoC_CR","rhoA")))
+        dt <- DT::formatStyle(dt, col,
+                              backgroundColor = DT::styleInterval(0.699, c("#fff3cd", "#d4edda")),
+                              color           = DT::styleInterval(0.699, c("#856404", "#155724")))
+      dt
+    })
+
     output$htmt_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_mm_quality(res)$htmt; if (is.null(df) || nrow(df) == 0) empty_dt("HTMT not available.") else standard_dt(df, digits = 3) })
     output$fornell_table <- renderDT({ res <- result_rv(); if (is.null(res)) return(empty_dt("The model has not been estimated yet.")); df <- extract_mm_quality(res)$fornell; if (is.null(df) || nrow(df) == 0) empty_dt("Fornell-Larcker not available.") else standard_dt(df, digits = 3) })
-    
+    output$hypothesis_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- build_hypothesis_table(res, relations_rv())
+      if (is.null(df) || nrow(df) == 0)
+        return(empty_dt("Hypothesis table not available. Run the model with bootstrapping to see p-values."))
+      dt <- datatable(format_df(df, 3), selection = "none", rownames = FALSE,
+                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+      if ("P_value" %in% names(df))
+        dt <- DT::formatStyle(dt, "P_value",
+                              backgroundColor = DT::styleInterval(0.05, c("#d4edda", "white")),
+                              color           = DT::styleInterval(0.05, c("#155724", "black")))
+      if ("Result" %in% names(df))
+        dt <- DT::formatStyle(dt, "Result",
+                              backgroundColor = DT::styleEqual(c("Supported","Not supported","No resampling"),
+                                                               c("#d4edda",  "#fff3cd",      "#e2e3e5")),
+                              color           = DT::styleEqual(c("Supported","Not supported","No resampling"),
+                                                               c("#155724",  "#856404",      "#383d41")))
+      dt
+    })
+
+    output$indirect_table <- renderDT({
+      res <- result_rv()
+      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+      df <- extract_indirect_effects(res)
+      if (is.null(df) || nrow(df) == 0)
+        return(empty_dt("Indirect/total effects not available. Requires bootstrapping and at least one mediated path."))
+      render_dt_with_pval_color(df, digits = 3)
+    })
+
+
+
     # ----------------------------------------------------------------------------
     # PLOTS & TEXT SUMMARIES
     # ----------------------------------------------------------------------------
-    output$estimated_model_plot <- DiagrammeR::renderGrViz({ 
+    output$estimated_model_plot <- DiagrammeR::renderGrViz({
       req(result_rv())
-      plot(result_rv(), .plot_structural_model_only = !isTRUE(input$show_items_estimated), .plot_labels = TRUE, .plot_correlations = "none") 
+      plot(result_rv(), .plot_structural_model_only = !isTRUE(input$show_items_estimated), .plot_labels = TRUE, .plot_correlations = "none")
     })
-    
+
     output$summary_text <- renderText({
       res <- result_rv()
       if (is.null(res)) return("The model has not been estimated yet.")
-      
+
       fit_df <- extract_model_fit(res)
       srmr_txt <- if (!is.null(fit_df) && any(fit_df$Index == "SRMR")) paste0("SRMR: ", sprintf("%.3f", fit_df$Value[fit_df$Index == "SRMR"][1]), ". ") else ""
-      
-      paste0("Model estimated successfully. ", 
-             "Resample method: ", resample_method(), "; R = ", ifelse(resample_method() == "none", 0, n_boot()), ". ", 
+
+      paste0("Model estimated successfully. ",
+             "Resample method: ", resample_method(), "; R = ", ifelse(resample_method() == "none", 0, n_boot()), ". ",
              "Data rows used: ", nrow(analysis_data()), ". ", srmr_txt)
     })
-    
+
     output$raw_sem_summary <- renderPrint({
       req(result_rv())
       cat("================ MODEL SUMMARY ================\n")
@@ -115,7 +196,7 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
       cat("\n================ MODEL ASSESSMENT ================\n")
       print(cSEM::assess(result_rv()))
     })
-    
+
     # ----------------------------------------------------------------------------
     # EXCEL EXPORT
     # ----------------------------------------------------------------------------
@@ -124,21 +205,23 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
       if (is.null(res)) return(NULL)
       bun <- analysis_bundle()
       list(
-        raw_data = raw_data_rv(), 
-        cleaned_data = bun$data, 
-        construct_definitions = constructs_to_df(constructs_rv()), 
+        raw_data = raw_data_rv(),
+        cleaned_data = bun$data,
+        construct_definitions = constructs_to_df(constructs_rv()),
         structural_relations = relations_rv(),
-        construct_types = get_construct_types(res), 
-        model_fit = extract_model_fit(res), 
-        r2 = extract_r2(res), 
+        construct_types = get_construct_types(res),
+        model_fit = extract_model_fit(res),
+        r2 = extract_r2(res),
         paths = extract_paths(res),
-        loadings = extract_loadings(res), 
-        quality = extract_mm_quality(res)$quality, 
-        htmt = extract_mm_quality(res)$htmt, 
-        fornell = extract_mm_quality(res)$fornell
+        loadings = extract_loadings(res),
+        quality = extract_mm_quality(res)$quality,
+        htmt = extract_mm_quality(res)$htmt,
+        fornell = extract_mm_quality(res)$fornell,
+        hypothesis_table       = build_hypothesis_table(res, relations_rv()),
+        indirect_total_effects = extract_indirect_effects(res)
       )
     })
-    
+
     output$download_excel <- downloadHandler(
       filename = function() paste0(sanitize_name(project_name() %||% "pls_sem_results"), ".xlsx"),
       content = function(file) {
@@ -146,14 +229,14 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
         req(lst)
         wb <- createWorkbook()
         for (nm in names(lst)) {
-          if (!is.null(lst[[nm]])) { 
+          if (!is.null(lst[[nm]])) {
             addWorksheet(wb, nm)
-            writeData(wb, nm, lst[[nm]]) 
+            writeData(wb, nm, lst[[nm]])
           }
         }
         saveWorkbook(wb, file, overwrite = TRUE)
       }
     )
-    
+
   })
 }
