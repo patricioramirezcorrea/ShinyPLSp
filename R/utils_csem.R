@@ -352,38 +352,11 @@ extract_model_fit <- function(res) {
 extract_mm_quality <- function(res) {
   b <- get_assess_safe(res)
   if (is.null(b)) return(list(quality = NULL, htmt = NULL, fornell = NULL))
-  omega_df <- NULL
-  rel <- b$Reliability
-  if (!is.null(rel)) {
-      if (!is.null(rel$omega)) {
-      omega_df <- named_to_df(rel$omega, "Construct", "Omega_McDonald")
-    }
-    if (is.null(omega_df) && !is.null(rel$rho_T)) {
-      omega_df <- named_to_df(rel$rho_T, "Construct", "Omega_McDonald")
-    }
-    if (is.null(omega_df) && !is.null(res$Estimates$Loading_estimates)) {
-      L <- res$Estimates$Loading_estimates
-      if (is.matrix(L)) {
-        omega_vals <- apply(L, 1, function(row) {
-          lam <- row[row != 0]
-          if (length(lam) < 2) return(NA_real_)
-          num   <- sum(lam)^2
-          denom <- num + sum(1 - lam^2)
-          if (denom == 0) NA_real_ else num / denom
-        })
-        omega_df <- data.frame(
-          Construct      = names(omega_vals),
-          Omega_McDonald = as.numeric(omega_vals),
-          stringsAsFactors = FALSE
-        )
-      }
-    }
-  }
+
 
   quality <- merge_by_first_col(list(
     if (!is.null(b$AVE))                                  named_to_df(b$AVE,                                  "Construct", "AVE")           else NULL,
     if (!is.null(rel$Cronbachs_alpha))                    named_to_df(rel$Cronbachs_alpha,                    "Construct", "Cronbach_alpha") else NULL,
-    omega_df,
     if (!is.null(rel$Joereskogs_rho))                     named_to_df(rel$Joereskogs_rho,                     "Construct", "rhoC_CR")        else NULL,
     if (!is.null(rel$`Dijkstra-Henselers_rho_A`))         named_to_df(rel$`Dijkstra-Henselers_rho_A`,         "Construct", "rhoA")           else NULL
   ))
