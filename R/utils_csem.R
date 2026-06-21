@@ -63,14 +63,30 @@ pick_best_table <- function(tbls, relation_type = c("generic", "path", "loading"
 normalize_table_source <- function(x, relation_type = c("generic", "path", "loading")) {
   relation_type <- match.arg(relation_type)
   if (is.null(x)) return(NULL)
-  if (is.data.frame(x)) return(as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE))
+
+  if (is.data.frame(x)) {
+    df <- as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE)
+    # Normalizar nombres: espacios y puntos → underscore, limpiar duplicados
+    names(df) <- gsub("[[:space:]]+", "_", names(df))
+    names(df) <- gsub("\\.+",         "_", names(df))
+    names(df) <- gsub("_+",           "_", names(df))
+    names(df) <- gsub("_$",           "",  names(df))
+    return(df)
+  }
+
   if (is.matrix(x)) {
     if (is.numeric(x) && !is.null(rownames(x)) && !is.null(colnames(x))) {
-      if (relation_type == "path") return(matrix_to_long(x, "Dependent", "Predictor", "Estimate", drop_zeros = TRUE))
-      if (relation_type == "loading") return(matrix_to_long(x, "Construct", "Indicator", "Estimate", drop_zeros = TRUE))
+      if (relation_type == "path")    return(matrix_to_long(x, "Dependent",  "Predictor", "Estimate", drop_zeros = TRUE))
+      if (relation_type == "loading") return(matrix_to_long(x, "Construct",  "Indicator", "Estimate", drop_zeros = TRUE))
     }
-    return(as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE))
+    df <- as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE)
+    names(df) <- gsub("[[:space:]]+", "_", names(df))
+    names(df) <- gsub("\\.+",         "_", names(df))
+    names(df) <- gsub("_+",           "_", names(df))
+    names(df) <- gsub("_$",           "",  names(df))
+    return(df)
   }
+
   NULL
 }
 
@@ -372,16 +388,40 @@ extract_mm_quality <- function(res) {
     if (!is.null(rel$`Dijkstra-Henselers_rho_A`))         named_to_df(rel$`Dijkstra-Henselers_rho_A`,         "Construct", "rhoA")           else NULL
   ))
 
+
   htmt <- NULL
   if (!is.null(b$HTMT) && !is.null(b$HTMT$htmts)) {
     htmt <- as.data.frame(b$HTMT$htmts, stringsAsFactors = FALSE, check.names = FALSE)
-    htmt <- cbind(Construct = rownames(htmt), htmt, row.names = NULL)
+    nr <- nrow(htmt)
+    nc <- ncol(htmt)
+    for (i in seq_len(nr)) {
+      for (j in seq_len(nc)) {
+        if (j >= i) htmt[i, j] <- NA
+      }
+    }
+    htmt <- cbind(Construct = rownames(b$HTMT$htmts), htmt, row.names = NULL)
   }
 
   fornell <- NULL
   if (!is.null(b$`Fornell-Larcker`)) {
     fornell <- as.data.frame(b$`Fornell-Larcker`, stringsAsFactors = FALSE, check.names = FALSE)
-    fornell <- cbind(Construct = rownames(fornell), fornell, row.names = NULL)
+
+    if (!is.null(b$AVE)) {
+      ave_vals <- b$AVE
+      for (cn in rownames(b$`Fornell-Larcker`)) {
+        if (cn %in% names(ave_vals) && cn %in% colnames(fornell)) {
+          fornell[cn, cn] <- round(sqrt(ave_vals[cn]), 3)
+        }
+      }
+    }
+    nr <- nrow(fornell)
+    nc <- ncol(fornell)
+    for (i in seq_len(nr)) {
+      for (j in seq_len(nc)) {
+        if (j > i) fornell[i, j] <- NA
+      }
+    }
+    fornell <- cbind(Construct = rownames(b$`Fornell-Larcker`), fornell, row.names = NULL)
   }
 
   list(quality = round_df(quality, 3), htmt = round_df(htmt, 3), fornell = round_df(fornell, 3))
@@ -479,7 +519,9 @@ extract_indirect_effects <- function(res) {
     nms      <- names(df)
     dep_col  <- find_name(nms, c("^Dependent$","^Target$","dependent","target","endo"))
     pred_col <- find_name(nms, c("^Predictor$","^Origin$","predictor","origin","exo","independent"))
-    rel_col  <- find_name(nms, c("^Path$","^Relation$","^Parameter$","path","relation","parameter","Name"))
+    rel_col  <- find_name(nms, c("^Indirect_effect$","^Total_effect$",
+                                 "^Path$","^Relation$","^Parameter$",
+                                 "path","relation","parameter","Name","effect"))
     est_col  <- find_name(nms, c("^Estimate$","estimate","original","beta", effect_label))
     se_col   <- find_name(nms, c("^SE$","std.*error","standard.*error","std.*err"))
     t_col    <- find_name(nms, c("^t$","t.*value","t.*stat"))
@@ -576,37 +618,4 @@ extract_indirect_effects <- function(res) {
   round_df(out[, intersect(cols_ord, names(out)), drop = FALSE], 3)
 }
 
-build_hypothesis_table <- function(res, relations_rv_df = NULL) {
-  if (is.null(res)) return(NULL)
-  paths_df <- extract_paths(res)
-  if (is.null(paths_df) || nrow(paths_df) == 0) return(NULL)
-  dep_col  <- if ("Dependent"  %in% names(paths_df)) "Dependent"  else NULL
-  pred_col <- if ("Predictor"  %in% names(paths_df)) "Predictor"  else NULL
-  if (is.null(dep_col) || is.null(pred_col)) return(NULL)
-  out <- data.frame(
-    Hypothesis   = paste0("H", seq_len(nrow(paths_df))),
-    Relationship = paste0(paths_df[[pred_col]], " -> ", paths_df[[dep_col]]),
-    Predictor    = paths_df[[pred_col]],
-    Dependent    = paths_df[[dep_col]],
-    stringsAsFactors = FALSE
-  )
-
-  est_col <- find_name(names(paths_df), c("^Estimate$","estimate","beta","original"))
-  if (!is.na(est_col)) out$Beta <- to_num(paths_df[[est_col]])
-
-  p_col <- find_name(names(paths_df), c("^P_value$","^p$","p.*value"))
-  out$P_value <- if (!is.na(p_col)) to_num(paths_df[[p_col]]) else NA_real_
-  t_col <- find_name(names(paths_df), c("^T_value$","^t$","t.*value","t.*stat"))
-  if (!is.na(t_col)) out$T_value <- to_num(paths_df[[t_col]])
-  cil_col <- find_name(names(paths_df), c("CI_low","ci.*low","lower"))
-  ciu_col <- find_name(names(paths_df), c("CI_high","ci.*up","upper"))
-  if (!is.na(cil_col)) out$CI_low  <- to_num(paths_df[[cil_col]])
-  if (!is.na(ciu_col)) out$CI_high <- to_num(paths_df[[ciu_col]])
-  out$Stars  <- significance_stars(out$P_value)
-  out$Result <- ifelse(is.na(out$P_value), "No resampling",
-                       ifelse(out$P_value <= 0.05, "Supported", "Not supported"))
-    show_cols <- intersect(c("Hypothesis","Relationship","Beta","T_value","P_value",
-                           "CI_low","CI_high","Stars","Result"), names(out))
-  round_df(out[, show_cols, drop = FALSE], 3)
-}
 

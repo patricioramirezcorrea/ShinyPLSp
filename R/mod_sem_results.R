@@ -22,7 +22,6 @@ mod_sem_results_ui <- function(id) {
               nav_panel("Measurement quality", DTOutput(ns("mm_quality_table"))),
               nav_panel("HTMT", DTOutput(ns("htmt_table"))),
               nav_panel("Fornell-Larcker", DTOutput(ns("fornell_table"))),
-              nav_panel("Hypothesis table",         DTOutput(ns("hypothesis_table"))),
               nav_panel("Indirect & Total effects", DTOutput(ns("indirect_table")))
             ),
 
@@ -246,34 +245,25 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
                       options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
 
       num_cols <- names(df)[sapply(df, is.numeric)]
-      for (col in num_cols) {
-        dt <- DT::formatStyle(dt, col,
-                              backgroundColor = DT::styleInterval(c(0.70, 0.90),
-                                                                  c("#d4edda", "#fff3cd", "#f8d7da")),
-                              color           = DT::styleInterval(c(0.70, 0.90),
-                                                                  c("#155724", "#856404", "#721c24")))
-      }
-      dt
-    })
 
-    output$hypothesis_table <- renderDT({
-      res <- result_rv()
-      if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
-      df <- build_hypothesis_table(res, relations_rv())
-      if (is.null(df) || nrow(df) == 0)
-        return(empty_dt("Hypothesis table not available. Run the model with bootstrapping to see p-values."))
-      dt <- datatable(format_df(df, 3), selection = "none", rownames = FALSE,
-                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
-      if ("P_value" %in% names(df))
-        dt <- DT::formatStyle(dt, "P_value",
-                              backgroundColor = DT::styleInterval(0.05, c("#d4edda", "white")),
-                              color           = DT::styleInterval(0.05, c("#155724", "black")))
-      if ("Result" %in% names(df))
-        dt <- DT::formatStyle(dt, "Result",
-                              backgroundColor = DT::styleEqual(c("Supported","Not supported","No resampling"),
-                                                               c("#d4edda",  "#fff3cd",      "#e2e3e5")),
-                              color           = DT::styleEqual(c("Supported","Not supported","No resampling"),
-                                                               c("#155724",  "#856404",      "#383d41")))
+      for (col in num_cols) {
+        col_idx <- which(names(df) == col)
+        row_idx <- which(names(df) == col) - 1  # -1 por columna Construct
+
+        if (col_idx == row_idx + 1) {
+          # Es la diagonal: √AVE — verde si >= 0.707 (equivale a AVE >= 0.50)
+          dt <- DT::formatStyle(dt, col,
+                                backgroundColor = DT::styleInterval(0.706, c("#fff3cd", "#d4edda")),
+                                color           = DT::styleInterval(0.706, c("#856404", "#155724")))
+        } else {
+          # Correlaciones fuera de diagonal: verde si bajas, rojo si altas
+          dt <- DT::formatStyle(dt, col,
+                                backgroundColor = DT::styleInterval(c(0.70, 0.90),
+                                                                    c("#d4edda", "#fff3cd", "#f8d7da")),
+                                color           = DT::styleInterval(c(0.70, 0.90),
+                                                                    c("#155724", "#856404", "#721c24")))
+        }
+      }
       dt
     })
 
@@ -335,7 +325,6 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
         quality = extract_mm_quality(res)$quality,
         htmt = extract_mm_quality(res)$htmt,
         fornell = extract_mm_quality(res)$fornell,
-        hypothesis_table       = build_hypothesis_table(res, relations_rv()),
         indirect_total_effects = extract_indirect_effects(res)
       )
     })
