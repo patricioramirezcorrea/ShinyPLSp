@@ -6,8 +6,6 @@
 #' @return A Shiny application object
 run_app <- function() {
 
-  # Al poner las librerías aquí, nos aseguramos de que toda la aplicación
-  # tenga acceso a ellas (dplyr, readxl, etc) sin tener que cambiar tu código.
   library(shiny)
   library(bslib)
   library(DT)
@@ -24,6 +22,5 @@ run_app <- function() {
 
   options(bitmapType = "cairo")
 
-  # Lanza la app usando las funciones que acabamos de crear
-  shiny::shinyApp(ui = app_ui(), server = app_server)
+  shiny::shinyApp(ui = app_ui(), server = app_server, options = list(launch.browser = TRUE))
 }
