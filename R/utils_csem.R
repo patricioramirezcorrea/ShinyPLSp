@@ -430,91 +430,34 @@ extract_mm_quality <- function(res) {
 extract_indirect_effects <- function(res) {
   if (is.null(res)) return(NULL)
 
-  s   <- get_summary_safe(res)
-  inf <- get_infer_safe(res)
+  s <- get_summary_safe(res)
+  if (is.null(s)) return(NULL)
 
-  indirect_df <- NULL
-  total_df    <- NULL
+  # Intentar tomar efectos indirectos y totales de summarize()
+  ind <- NULL
+  tot <- NULL
 
-  # Buscar en summarize()
-  if (!is.null(s)) {
-    for (nm in c("Indirect_effects", "Indirect_effect", "indirect_effects", "indirect_effect")) {
-      obj <- s[[nm]]
-      if (is.null(obj)) obj <- s$Estimates[[nm]]
-      if (!is.null(obj)) {
-        raw <- normalize_table_source(obj, "path")
-        if (!is.null(raw) && nrow(raw) > 0) { indirect_df <- raw; break }
-      }
-    }
-    for (nm in c("Total_effects", "Total_effect", "total_effects", "total_effect")) {
-      obj <- s[[nm]]
-      if (is.null(obj)) obj <- s$Estimates[[nm]]
-      if (!is.null(obj)) {
-        raw <- normalize_table_source(obj, "path")
-        if (!is.null(raw) && nrow(raw) > 0) { total_df <- raw; break }
-      }
-    }
-    if (is.null(indirect_df)) {
-      all_nms <- c(names(s), names(s$Estimates))
-      for (nm in all_nms[grepl("indirect", all_nms, ignore.case = TRUE)]) {
-        obj <- if (!is.null(s[[nm]])) s[[nm]] else s$Estimates[[nm]]
-        raw <- tryCatch(normalize_table_source(obj, "path"), error = function(e) NULL)
-        if (!is.null(raw) && is.data.frame(raw) && nrow(raw) > 0) { indirect_df <- raw; break }
-      }
-    }
-    if (is.null(total_df)) {
-      all_nms <- c(names(s), names(s$Estimates))
-      for (nm in all_nms[grepl("total", all_nms, ignore.case = TRUE)]) {
-        obj <- if (!is.null(s[[nm]])) s[[nm]] else s$Estimates[[nm]]
-        raw <- tryCatch(normalize_table_source(obj, "path"), error = function(e) NULL)
-        if (!is.null(raw) && is.data.frame(raw) && nrow(raw) > 0) { total_df <- raw; break }
-      }
+  for (nm in c("Indirect_effects","Indirect_effect","indirect_effects","indirect_effect")) {
+    obj <- s[[nm]]
+    if (is.null(obj) && !is.null(s$Estimates)) obj <- s$Estimates[[nm]]
+    if (!is.null(obj)) {
+      ind <- normalize_table_source(obj, "path")
+      break
     }
   }
 
-  # Buscar en infer() como segundo recurso
-  if (!is.null(inf) && (is.null(indirect_df) || is.null(total_df))) {
-    all_nms <- names(inf)
-    if (is.null(indirect_df)) {
-      for (nm in all_nms[grepl("indirect", all_nms, ignore.case = TRUE)]) {
-        raw <- tryCatch(normalize_table_source(inf[[nm]], "path"), error = function(e) NULL)
-        if (!is.null(raw) && is.data.frame(raw) && nrow(raw) > 0) { indirect_df <- raw; break }
-      }
-    }
-    if (is.null(total_df)) {
-      for (nm in all_nms[grepl("total", all_nms, ignore.case = TRUE)]) {
-        raw <- tryCatch(normalize_table_source(inf[[nm]], "path"), error = function(e) NULL)
-        if (!is.null(raw) && is.data.frame(raw) && nrow(raw) > 0) { total_df <- raw; break }
-      }
+  for (nm in c("Total_effects","Total_effect","total_effects","total_effect")) {
+    obj <- s[[nm]]
+    if (is.null(obj) && !is.null(s$Estimates)) obj <- s$Estimates[[nm]]
+    if (!is.null(obj)) {
+      tot <- normalize_table_source(obj, "path")
+      break
     }
   }
 
-  # Fallback: cálculo manual desde matriz de rutas
-  if (is.null(indirect_df) && !is.null(res$Estimates$Path_estimates)) {
-    B <- res$Estimates$Path_estimates
-    if (is.matrix(B) && nrow(B) > 1) {
-      B2 <- B %*% B
-      B3 <- B2 %*% B
-      indirect_mat <- B2 + B3
-      df_long <- matrix_to_long(indirect_mat, "Dependent", "Predictor", "Estimate", drop_zeros = TRUE)
-      df_long <- df_long[!is.na(df_long$Estimate) & abs(df_long$Estimate) > 1e-6, , drop = FALSE]
-      direct_long <- matrix_to_long(B, "Dependent", "Predictor", "Est", drop_zeros = TRUE)
-      direct_keys <- paste0(direct_long$Dependent, "|||", direct_long$Predictor)
-      df_long$key <- paste0(df_long$Dependent, "|||", df_long$Predictor)
-      df_long     <- df_long[!df_long$key %in% direct_keys, , drop = FALSE]
-      df_long$key <- NULL
-      if (nrow(df_long) > 0) indirect_df <- df_long
-      total_mat  <- B + indirect_mat
-      total_long <- matrix_to_long(total_mat, "Dependent", "Predictor", "Estimate", drop_zeros = TRUE)
-      total_long <- total_long[!is.na(total_long$Estimate) & abs(total_long$Estimate) > 1e-6, , drop = FALSE]
-      if (nrow(total_long) > 0) total_df <- total_long
-    }
-  }
+  if (is.null(ind) && is.null(tot)) return(NULL)
 
-  if (is.null(indirect_df) && is.null(total_df)) return(NULL)
-
-  # Parser interno
-  parse_effects_table <- function(df, effect_label = "Indirect_Estimate") {
+  parse_effects <- function(df, type_label) {
     if (is.null(df) || nrow(df) == 0) return(NULL)
     nms      <- names(df)
     dep_col  <- find_name(nms, c("^Dependent$","^Target$","dependent","target","endo"))
@@ -522,100 +465,54 @@ extract_indirect_effects <- function(res) {
     rel_col  <- find_name(nms, c("^Indirect_effect$","^Total_effect$",
                                  "^Path$","^Relation$","^Parameter$",
                                  "path","relation","parameter","Name","effect"))
-    est_col  <- find_name(nms, c("^Estimate$","estimate","original","beta", effect_label))
+    est_col  <- find_name(nms, c("^Estimate$","estimate","original","beta"))
     se_col   <- find_name(nms, c("^SE$","std.*error","standard.*error","std.*err"))
     t_col    <- find_name(nms, c("^t$","t.*value","t.*stat"))
     p_col    <- find_name(nms, c("^p$","p.*value"))
     cil_col  <- find_name(nms, c("ci.*low","ci.*lower","lower.*ci","2\\.5","lower"))
     ciu_col  <- find_name(nms, c("ci.*up","ci.*upper","upper.*ci","97\\.5","upper"))
+
     dep <- pred <- NULL
     if (!is.na(dep_col) && !is.na(pred_col)) {
       dep  <- as.character(df[[dep_col]])
       pred <- as.character(df[[pred_col]])
     } else if (!is.na(rel_col)) {
       pairs <- t(vapply(as.character(df[[rel_col]]), parse_path_relation, character(2)))
-      dep <- pairs[,1]; pred <- pairs[,2]
+      dep  <- pairs[,1]
+      pred <- pairs[,2]
     } else if (ncol(df) >= 2) {
-      dep <- as.character(df[[1]]); pred <- as.character(df[[2]])
+      dep  <- as.character(df[[1]])
+      pred <- as.character(df[[2]])
     } else return(NULL)
-    if (is.na(est_col)) {
-      num_candidates <- names(df)[sapply(df, is.numeric)]
-      if (length(num_candidates) > 0) est_col <- num_candidates[1]
-    }
+
     out <- data.frame(
-      Dependent = dep, Predictor = pred,
-      Estimate  = if (!is.na(est_col))  to_num(df[[est_col]])  else NA_real_,
-      Std_Error = if (!is.na(se_col))   to_num(df[[se_col]])   else NA_real_,
-      T_value   = if (!is.na(t_col))    to_num(df[[t_col]])    else NA_real_,
-      P_value   = if (!is.na(p_col))    to_num(df[[p_col]])    else NA_real_,
-      CI_low    = if (!is.na(cil_col))  to_num(df[[cil_col]])  else NA_real_,
-      CI_high   = if (!is.na(ciu_col))  to_num(df[[ciu_col]])  else NA_real_,
+      Type      = type_label,
+      Predictor = pred,
+      Dependent = dep,
+      Estimate  = if (!is.na(est_col)) to_num(df[[est_col]]) else NA_real_,
+      Std_Error = if (!is.na(se_col))  to_num(df[[se_col]])  else NA_real_,
+      T_value   = if (!is.na(t_col))   to_num(df[[t_col]])   else NA_real_,
+      P_value   = if (!is.na(p_col))   to_num(df[[p_col]])   else NA_real_,
+      CI_low    = if (!is.na(cil_col)) to_num(df[[cil_col]]) else NA_real_,
+      CI_high   = if (!is.na(ciu_col)) to_num(df[[ciu_col]]) else NA_real_,
       stringsAsFactors = FALSE
     )
-    keep <- !(is.na(out$Dependent) | is.na(out$Predictor) | out$Dependent == "" | out$Predictor == "")
+    keep <- !(is.na(out$Predictor) | is.na(out$Dependent) |
+                out$Predictor == "" | out$Dependent == "")
     out  <- out[keep, , drop = FALSE]
     out$Significance <- significance_stars(out$P_value)
     rownames(out) <- NULL
-    out
+    round_df(out, 3)
   }
 
-  indirect_parsed <- parse_effects_table(indirect_df, "Indirect_Estimate")
-  total_parsed    <- parse_effects_table(total_df,    "Total_Estimate")
-  direct_df       <- extract_paths(res)
+  out_ind <- parse_effects(ind, "Indirect")
+  out_tot <- parse_effects(tot, "Total")
 
-  all_pairs <- unique(rbind(
-    if (!is.null(direct_df)       && all(c("Predictor","Dependent") %in% names(direct_df)))       direct_df[,       c("Predictor","Dependent")] else NULL,
-    if (!is.null(indirect_parsed) && all(c("Predictor","Dependent") %in% names(indirect_parsed))) indirect_parsed[, c("Predictor","Dependent")] else NULL,
-    if (!is.null(total_parsed)    && all(c("Predictor","Dependent") %in% names(total_parsed)))    total_parsed[,    c("Predictor","Dependent")] else NULL
-  ))
-  if (is.null(all_pairs) || nrow(all_pairs) == 0) return(NULL)
+  out <- rbind(out_ind, out_tot)
+  if (is.null(out) || nrow(out) == 0) return(NULL)
 
-  out <- all_pairs
   out$Relationship <- paste0(out$Predictor, " -> ", out$Dependent)
-
-  if (!is.null(direct_df) && all(c("Predictor","Dependent","Estimate") %in% names(direct_df))) {
-    d2 <- direct_df[, intersect(names(direct_df), c("Predictor","Dependent","Estimate","P_value","Significance"))]
-    names(d2)[names(d2) == "Estimate"]     <- "Direct_Estimate"
-    names(d2)[names(d2) == "P_value"]      <- "Direct_P_value"
-    names(d2)[names(d2) == "Significance"] <- "Direct_Sig"
-    out <- merge(out, d2, by = c("Predictor","Dependent"), all.x = TRUE)
-  } else {
-    out$Direct_Estimate <- NA_real_; out$Direct_P_value <- NA_real_; out$Direct_Sig <- NA_character_
-  }
-
-  if (!is.null(indirect_parsed) && nrow(indirect_parsed) > 0) {
-    i2 <- indirect_parsed[, intersect(names(indirect_parsed), c("Predictor","Dependent","Estimate","P_value","Significance","CI_low","CI_high"))]
-    names(i2)[names(i2) == "Estimate"]     <- "Indirect_Estimate"
-    names(i2)[names(i2) == "P_value"]      <- "Indirect_P_value"
-    names(i2)[names(i2) == "Significance"] <- "Indirect_Sig"
-    names(i2)[names(i2) == "CI_low"]       <- "Indirect_CI_low"
-    names(i2)[names(i2) == "CI_high"]      <- "Indirect_CI_high"
-    out <- merge(out, i2, by = c("Predictor","Dependent"), all.x = TRUE)
-  } else {
-    out$Indirect_Estimate <- NA_real_; out$Indirect_P_value  <- NA_real_
-    out$Indirect_Sig      <- NA_character_
-    out$Indirect_CI_low   <- NA_real_;  out$Indirect_CI_high <- NA_real_
-  }
-
-  if (!is.null(total_parsed) && nrow(total_parsed) > 0) {
-    t2 <- total_parsed[, intersect(names(total_parsed), c("Predictor","Dependent","Estimate","P_value","Significance"))]
-    names(t2)[names(t2) == "Estimate"]     <- "Total_Estimate"
-    names(t2)[names(t2) == "P_value"]      <- "Total_P_value"
-    names(t2)[names(t2) == "Significance"] <- "Total_Sig"
-    out <- merge(out, t2, by = c("Predictor","Dependent"), all.x = TRUE)
-  } else {
-    out$Total_Estimate <- rowSums(
-      cbind(ifelse(is.na(out$Direct_Estimate),   0, out$Direct_Estimate),
-            ifelse(is.na(out$Indirect_Estimate), 0, out$Indirect_Estimate)))
-    out$Total_P_value <- NA_real_; out$Total_Sig <- NA_character_
-  }
-
-  cols_ord <- c("Relationship","Predictor","Dependent",
-                "Direct_Estimate","Direct_P_value","Direct_Sig",
-                "Indirect_Estimate","Indirect_P_value","Indirect_Sig",
-                "Indirect_CI_low","Indirect_CI_high",
-                "Total_Estimate","Total_P_value","Total_Sig")
-  round_df(out[, intersect(cols_ord, names(out)), drop = FALSE], 3)
+  out[, c("Type","Relationship","Predictor","Dependent",
+          "Estimate","Std_Error","T_value","P_value",
+          "CI_low","CI_high","Significance")]
 }
-
-

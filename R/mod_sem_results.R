@@ -22,7 +22,7 @@ mod_sem_results_ui <- function(id) {
               nav_panel("Measurement quality", DTOutput(ns("mm_quality_table"))),
               nav_panel("HTMT", DTOutput(ns("htmt_table"))),
               nav_panel("Fornell-Larcker", DTOutput(ns("fornell_table"))),
-              nav_panel("Indirect & Total effects", DTOutput(ns("indirect_table")))
+              nav_panel("Indirect & Total effects", DTOutput(ns("effects_table")))
             ),
 
             card(
@@ -241,41 +241,86 @@ mod_sem_results_server <- function(id, result_rv, constructs_rv, relations_rv, a
       if (is.null(df) || nrow(df) == 0) return(empty_dt("Fornell-Larcker not available."))
 
       df_fmt <- format_df(df, 3)
-      dt <- datatable(df_fmt, selection = "single", rownames = FALSE,
-                      options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
 
+      # Columnas numéricas (constructos)
       num_cols <- names(df)[sapply(df, is.numeric)]
 
-      for (col in num_cols) {
-        col_idx <- which(names(df) == col)
-        row_idx <- which(names(df) == col) - 1  # -1 por columna Construct
+      # Índices de columnas en DT (JS usa base 0; la primera columna "Construct" es 0)
+      js_col_idx <- setNames(seq_along(names(df)) - 1, names(df))
 
-        if (col_idx == row_idx + 1) {
-          # Es la diagonal: √AVE — verde si >= 0.707 (equivale a AVE >= 0.50)
-          dt <- DT::formatStyle(dt, col,
-                                backgroundColor = DT::styleInterval(0.706, c("#fff3cd", "#d4edda")),
-                                color           = DT::styleInterval(0.706, c("#856404", "#155724")))
+      # Vector con diagonales por constructo
+      diag_vals <- sapply(num_cols, function(cn) {
+        row_i <- which(df$Construct == cn)
+        if (length(row_i) == 1) as.numeric(df[row_i, cn]) else NA_real_
+      })
+
+      # Pasar diagonales a JS como objeto
+      diag_js <- paste0(
+        "{",
+        paste(sprintf('"%s": %s', names(diag_vals),
+                      ifelse(is.na(diag_vals), "null", format(diag_vals, scientific = FALSE))),
+              collapse = ", "),
+        "}"
+      )
+
+      callback_js <- JS(sprintf("
+    var diagVals = %s;
+    table.rows().every(function(rowIdx, tableLoop, rowLoop) {
+      var data = this.data();
+      var rowConstruct = data[0];
+      var rowNode = this.node();
+
+      for (var j = 1; j < data.length; j++) {
+        var colName = table.column(j).header().textContent.trim();
+        var cell = $('td', rowNode).eq(j);
+        var val = parseFloat(data[j]);
+
+        if (isNaN(val)) continue;
+
+        // Diagonal: no colorear
+        if (rowConstruct === colName) {
+          cell.css({'background-color': '', 'color': ''});
         } else {
-          # Correlaciones fuera de diagonal: verde si bajas, rojo si altas
-          dt <- DT::formatStyle(dt, col,
-                                backgroundColor = DT::styleInterval(c(0.70, 0.90),
-                                                                    c("#d4edda", "#fff3cd", "#f8d7da")),
-                                color           = DT::styleInterval(c(0.70, 0.90),
-                                                                    c("#155724", "#856404", "#721c24")))
+          var diagRow = diagVals[rowConstruct];
+          var diagCol = diagVals[colName];
+          var threshold = Math.min(diagRow, diagCol);
+
+          if (!isNaN(threshold) && val >= threshold) {
+            cell.css({'background-color': '#f8d7da', 'color': '#721c24'});
+          } else {
+            cell.css({'background-color': '#d4edda', 'color': '#155724'});
+          }
         }
       }
-      dt
+    });
+  ", diag_js))
+
+      datatable(
+        df_fmt,
+        selection = "single",
+        rownames = FALSE,
+        options = list(
+          dom = "tip",
+          pageLength = 100,
+          scrollX = TRUE,
+          rowCallback = callback_js
+        )
+      )
     })
 
-    output$indirect_table <- renderDT({
+
+    output$effects_table <- renderDT({
       res <- result_rv()
       if (is.null(res)) return(empty_dt("The model has not been estimated yet."))
+
       df <- extract_indirect_effects(res)
       if (is.null(df) || nrow(df) == 0)
         return(empty_dt("Indirect/total effects not available. Requires bootstrapping and at least one mediated path."))
-      render_dt_with_pval_color(df, digits = 3)
-    })
 
+      df_fmt <- format_df(df, 3)
+      datatable(df_fmt, selection = "single", rownames = FALSE,
+                options = list(dom = "tip", pageLength = 100, scrollX = TRUE))
+    })
 
     # ----------------------------------------------------------------------------
     # PLOTS & TEXT SUMMARIES
