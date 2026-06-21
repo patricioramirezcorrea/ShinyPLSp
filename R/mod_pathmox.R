@@ -109,7 +109,7 @@ pathmoxMICOM <- function(.model, .data, .catvar, .scheme = "path", .consistent =
               } else {
                 .micom_res <- tryCatch({
                   suppressMessages(suppressWarnings({
-                    .fit_mg <- cSEM::csem(.data = list(G1=.dt1, G2=.dt2), .model = .model, .PLS_weight_scheme_inner = .scheme, .disattenuate = .consistent)
+                    .fit_mg <- cSEM::csem(.data = list(G1=.dt1, G2=.dt2), .model = .model, .PLS_weight_scheme_inner = .scheme, .disattenuate = .consistent, .eval_plan = "multisession")
                   }))
 
                   if(inherits(.fit_mg, "cSEMResults_multi")) {
@@ -519,7 +519,8 @@ mod_pathmox_server <- function(id, analysis_data_aug_rv, model_lavaan, result_rv
                 .approach_weights = approach_weights(),
                 .approach_paths = approach_paths(),
                 .PLS_weight_scheme_inner = pls_inner_scheme(),
-                .disattenuate = plsc_disattenuate()
+                .disattenuate = plsc_disattenuate(),
+                .eval_plan  = "multisession"
               )
             }, error = function(e) e)
 
@@ -537,7 +538,7 @@ mod_pathmox_server <- function(id, analysis_data_aug_rv, model_lavaan, result_rv
                 model_lines <- trimws(strsplit(model, "\n")[[1]])
                 structural_model <- paste(model_lines[grepl("~", model_lines, fixed = TRUE) & !grepl("=~", model_lines, fixed = TRUE) & !grepl("<~", model_lines, fixed = TRUE)], collapse = "\n")
                 if (nzchar(structural_model)) {
-                  get("testMGD", envir = asNamespace("cSEM"))(csem_by_group, .parameters_to_compare = structural_model, .approach_mgd = "Henseler", .R_bootstrap = max(50, input$pathmox_boot_micom), .verbose = FALSE)
+                  get("testMGD", envir = asNamespace("cSEM"))(csem_by_group, .parameters_to_compare = structural_model, .approach_mgd = "Henseler", .R_bootstrap = max(50, input$pathmox_boot_micom), .eval_plan             = "multisession", .verbose = FALSE)
                 } else {
                   list(error = "No structural paths to compare.")
                 }
@@ -568,6 +569,7 @@ mod_pathmox_server <- function(id, analysis_data_aug_rv, model_lavaan, result_rv
                     args$.resample_method <- resample_method()
                     args$.R <- if (resample_method() == "none") 0 else n_boot()
                     args$.handle_inadmissibles <- handle_inadmissibles()
+                    args$.eval_plan  <- "multisession"
                     do.call(cSEM::csem, args)
                   }, error = function(e) NULL)
 

@@ -161,6 +161,7 @@ app_server <- function(input, output, session) {
           .resample_method = input$resample_method,
           .R = n_boot,
           .handle_inadmissibles = input$handle_inadmissibles,
+          .eval_plan            = "multisession",
           .disattenuate = input$plsc_disattenuate
         ),
         silent = TRUE
