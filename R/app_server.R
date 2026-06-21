@@ -257,13 +257,7 @@ app_server <- function(input, output, session) {
     pathmox_levels_selected_rv(character(0))
 
     session$onFlushed(function() {
-      df <- raw_data_rv()
-      if (!is.null(df)) {
-        df1 <- apply_omission_code(as.data.frame(df), input$omission_code)
-        bun  <- apply_missing_treatment(df1, input$missing_treatment)
-        analysis_data_aug_rv(bun$data)
-      }
-      loading_project_rv(FALSE)
+       loading_project_rv(FALSE)
     }, once = TRUE)
 
     showNotification("Project loaded successfully.", type = "message")
