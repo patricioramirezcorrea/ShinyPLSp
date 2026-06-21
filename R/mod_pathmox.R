@@ -264,12 +264,12 @@ mod_pathmox_ui <- function(id) {
                   numericInput(ns("pathmox_alpha"), "Alpha", value = 0.05, min = 0.001, max = 0.20, step = 0.001),
                   numericInput(ns("pathmox_deep"), "Maximum depth", value = 3, min = 1, max = 10, step = 1),
                   numericInput(ns("pathmox_size"), "Minimum node size", value = 0.1, min = 0.05, step = 0.05),
-                  numericInput(ns("pathmox_size_candidate"), "Minimum candidate split size", value = 15, min = 3, step = 1)
+                  numericInput(ns("pathmox_size_candidate"), "Minimum candidate split size", value = 50, min = 10, step = 1)
                 ),
                 layout_columns(
                   col_widths = c(4, 4, 4),
                   checkboxInput(ns("pathmox_test_invariance"), "Run MICOM during splitting", value = TRUE),
-                  checkboxInput(ns("pathmox_require_critical_invariance"), "Stop split if critical invariance fails", value = FALSE),
+                  checkboxInput(ns("pathmox_require_critical_invariance"), "Require invariance only for significant paths", value = FALSE),
                   numericInput(ns("pathmox_boot_micom"), "Bootstrap resamples (MGA/MICOM)", value = 200, min = 100, step = 100)
                 ),
                 actionButton(ns("btn_run_pathmox"), "Run PATHMOX", class = "btn-success btn-compact")
@@ -514,7 +514,7 @@ mod_pathmox_server <- function(id, analysis_data_aug_rv, model_lavaan, result_rv
               cSEM::csem(
                 .data = pmx$hybrid,
                 .model = model,
-                .resample_method = "none", # <-- CAMBIO CLAVE
+                .resample_method = "none",
                 .handle_inadmissibles = handle_inadmissibles(),
                 .approach_weights = approach_weights(),
                 .approach_paths = approach_paths(),

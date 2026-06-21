@@ -30,8 +30,6 @@ app_server <- function(input, output, session) {
   pathmox_micom_rv   <- reactiveVal(NULL)
   pathmox_mga_rv     <- reactiveVal(NULL)
 
-  wpi_results_rv <- reactiveVal(NULL)
-
   # ----------------------------------------------------------------------------
   # CARGA DE DATOS Y BUNDLE REACTIVO
   # ----------------------------------------------------------------------------
@@ -95,11 +93,7 @@ app_server <- function(input, output, session) {
   mod_sem_results_server("sem_results_tab", result_rv, constructs_rv, relations_rv, analysis_data,
                          analysis_bundle, raw_data_rv, reactive(input$resample_method),
                          reactive(input$n_boot), reactive(input$project_name))
-
-  # 5. Módulo WPI
-  mod_wpi_server("wpi_tab", result_rv, analysis_data, constructs_rv, wpi_results_rv, analysis_data_aug_rv, loading_project_rv)
-
-  # 6. Módulo PATHMOX
+  # 5. Módulo PATHMOX
   mod_pathmox_server("pathmox_tab", analysis_data_aug_rv, relations_out$model_lavaan, result_rv,
                      pathmox_segvars_rv, pathmox_results_rv, pathmox_micom_rv, pathmox_mga_rv, pmx_detail_cache,
                      pathmox_levels_available_rv, pathmox_levels_selected_rv,
@@ -195,17 +189,7 @@ app_server <- function(input, output, session) {
           raw_data = raw_data_rv(),
           constructs = constructs_rv(),
           relations = relations_rv(),
-          result = result_rv(),
-
-          wpi_results = wpi_results_rv(),
-          analysis_data_aug = analysis_data_aug_rv(),
-
           pathmox_segvars = pathmox_segvars_rv(),
-          pathmox_results = pathmox_results_rv(),
-          pathmox_micom = pathmox_micom_rv(),
-          pathmox_mga = pathmox_mga_rv(),
-          pmx_detail_cache = pmx_detail_cache(),
-
           settings = list(
             omission_code = input$omission_code,
             missing_treatment = input$missing_treatment,
@@ -228,11 +212,11 @@ app_server <- function(input, output, session) {
     req(input$project_file)
 
     loading_project_rv(TRUE)
-    on.exit(loading_project_rv(FALSE), add = TRUE)
 
     project <- try(readRDS(input$project_file$datapath), silent = TRUE)
     if (inherits(project, "try-error")) {
       showNotification("Invalid project file.", type = "error")
+      loading_project_rv(FALSE)
       return(NULL)
     }
 
@@ -251,26 +235,21 @@ app_server <- function(input, output, session) {
 
     # Restaurar variables globales
     raw_data_rv(if (!is.null(project$raw_data)) as.data.frame(project$raw_data) else NULL)
+
+    all_cols <- if (!is.null(project$raw_data)) colnames(project$raw_data) else character(0)
+    used_items <- unique(unlist(lapply(project$constructs, `[[`, "items"), use.names = FALSE))
+    items_available_rv(sort(setdiff(all_cols, used_items)))
+    items_selected_rv(character(0))
+
     constructs_rv(if (!is.null(project$constructs)) project$constructs else list())
     relations_rv(if (!is.null(project$relations)) project$relations else data.frame(origin = character(), target = character(), stringsAsFactors = FALSE))
-    result_rv(if (!is.null(project$result)) project$result else NULL)
-    wpi_results_rv(if (!is.null(project$wpi_results)) project$wpi_results else NULL)
+    pathmox_segvars_rv( if (!is.null(project$pathmox_segvars)) project$pathmox_segvars  else data.frame(Variable = character(), Processing = character(), Bins = numeric(), Levels = character(), Ordered = logical(), stringsAsFactors = FALSE))
 
-    pathmox_segvars_rv(
-      if (!is.null(project$pathmox_segvars)) project$pathmox_segvars
-      else data.frame(Variable = character(), Processing = character(), Bins = numeric(), Levels = character(), Ordered = logical(), stringsAsFactors = FALSE)
-    )
-
-    pathmox_results_rv(if (!is.null(project$pathmox_results)) project$pathmox_results else NULL)
-    pathmox_micom_rv(if (!is.null(project$pathmox_micom)) project$pathmox_micom else NULL)
-    pathmox_mga_rv(if (!is.null(project$pathmox_mga)) project$pathmox_mga else NULL)
-    pmx_detail_cache(if (!is.null(project$pmx_detail_cache)) project$pmx_detail_cache else list())
-
-    if (!is.null(project$analysis_data_aug)) {
-      analysis_data_aug_rv(project$analysis_data_aug)
-    } else {
-      analysis_data_aug_rv(analysis_data())
-    }
+    result_rv(NULL)
+    pathmox_results_rv(NULL)
+    pathmox_micom_rv(NULL)
+    pathmox_mga_rv(NULL)
+    pmx_detail_cache(list())
 
     construct_selected_idx(NULL)
     relation_selected_idx(NULL)
@@ -278,6 +257,7 @@ app_server <- function(input, output, session) {
     pathmox_levels_selected_rv(character(0))
 
     session$onFlushed(function() {
+      analysis_data_aug_rv(analysis_data())
       loading_project_rv(FALSE)
     }, once = TRUE)
 

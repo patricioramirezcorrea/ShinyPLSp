@@ -66,20 +66,6 @@ ShinyPLSp combines the methodological rigor of the **cSEM** ecosystem with advan
 
 * Estimated path diagrams
 
-### Weighted Performance Index (WPI)
-
-A proprietary post-estimation module that:
-
-* Uses total effects obtained from the estimated PLS-SEM model
-
-* Computes weighted construct performance scores
-
-* Performs automated segmentation using K-Means clustering
-
-* Generates t-SNE visualizations
-
-* Identifies high- and low-performance respondent profiles
-
 ### PATHMOX Segmentation
 
 Advanced heterogeneity detection through:
@@ -160,9 +146,7 @@ Input datasets must satisfy the following conditions:
 
 7. Assess structural relationships
 
-8. Perform WPI analysis (optional)
-
-9. Perform PATHMOX segmentation (optional)
+8. Perform PATHMOX segmentation (optional)
 
 ***
 

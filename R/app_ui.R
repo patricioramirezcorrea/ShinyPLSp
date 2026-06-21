@@ -83,7 +83,6 @@ app_ui <- function() {
       mod_constructs_ui("constructs_tab"),
       mod_relations_ui("relations_tab"),
       mod_sem_results_ui("sem_results_tab"),
-      mod_wpi_ui("wpi_tab"),
       mod_pathmox_ui("pathmox_tab")
     )
   )
