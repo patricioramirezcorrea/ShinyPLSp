@@ -99,9 +99,7 @@ Install the development version directly from GitHub:
 ```r
 install.packages("remotes")
 
-remotes::install_github(
-  "patricioramirezcorrea/ShinyPLSp"
-)
+remotes::install_github("patricioramirezcorrea/ShinyPLSp")
 ```
 
 Launch the application:
