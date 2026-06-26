@@ -180,6 +180,8 @@ Researchers should not rely solely on automated statistical outputs. Results mus
 
 ## Author
 
-Patricio Ramírez-Correa
+Dr. Patricio Ramírez-Correa
+
 Full Professor
+
 Universidad Católica del Norte (Chile)
