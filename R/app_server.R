@@ -104,6 +104,16 @@ app_server <- function(input, output, session) {
                      pathmox_levels_available_rv, pathmox_levels_selected_rv,
                      reactive(input$handle_inadmissibles), reactive(input$approach_weights), reactive(input$approach_paths),
                      reactive(input$pls_inner_scheme), reactive(input$plsc_disattenuate), reactive(input$resample_method), reactive(input$n_boot))
+  # 6. Módulo MICOM + MGA con segmentación definida por el usuario
+  mod_micom_mga_server( "micom_mga_tab", analysis_data_aug_rv = analysis_data_aug_rv,
+    model_lavaan = relations_out$model_lavaan,
+    result_rv = result_rv,
+    handle_inadmissibles = reactive(input$handle_inadmissibles),
+    approach_weights = reactive(input$approach_weights),
+    approach_paths = reactive(input$approach_paths),
+    pls_inner_scheme = reactive(input$pls_inner_scheme),
+    plsc_disattenuate = reactive(input$plsc_disattenuate)
+  )
 
   # ----------------------------------------------------------------------------
   # CSEM ESTIMATION (CORE LOGIC Y CACHÉ)
