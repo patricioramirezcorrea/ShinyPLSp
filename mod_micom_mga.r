@@ -1,6 +1,9 @@
 # ==============================================================================
 # MODULE: MICOM + HENSELER MGA BY USER-DEFINED SEGMENTATION VARIABLE
-# Requires: shiny, bslib, DT, cSEM
+# ==============================================================================
+# Dependencies already imported by run_app(): shiny, bslib, DT, cSEM, openxlsx
+# This module intentionally uses cSEM::testMGD() with individual lavaan paths
+# (one valid statement per test) to avoid malformed multiline syntax.
 # ==============================================================================
 
 mod_micom_mga_ui <- function(id) {
@@ -8,6 +11,7 @@ mod_micom_mga_ui <- function(id) {
 
   bslib::nav_panel(
     "MICOM & MGA",
+
     bslib::card(
       bslib::card_header("User-defined segmentation"),
       bslib::card_body(
@@ -37,19 +41,43 @@ mod_micom_mga_ui <- function(id) {
         shiny::uiOutput(ns("group_summary"))
       )
     ),
+
     bslib::layout_columns(
       col_widths = c(6, 6),
-      bslib::card(full_screen = TRUE, bslib::card_header("MICOM: compositional invariance (Step 2)"), bslib::card_body(DT::DTOutput(ns("micom_table")))),
-      bslib::card(full_screen = TRUE, bslib::card_header("Henseler MGA: structural paths"), bslib::card_body(DT::DTOutput(ns("mga_table"))))
+      bslib::card(
+        full_screen = TRUE,
+        bslib::card_header("MICOM: compositional invariance (Step 2)"),
+        bslib::card_body(DT::DTOutput(ns("micom_table")))
+      ),
+      bslib::card(
+        full_screen = TRUE,
+        bslib::card_header("Henseler MGA: structural paths"),
+        bslib::card_body(DT::DTOutput(ns("mga_table")))
+      )
     ),
+
     bslib::layout_columns(
       col_widths = c(6, 6),
-      bslib::card(full_screen = TRUE, bslib::card_header("Group-specific path coefficients"), bslib::card_body(DT::DTOutput(ns("paths_table")))),
-      bslib::card(full_screen = TRUE, bslib::card_header("Analysis log"), bslib::card_body(DT::DTOutput(ns("log_table"))))
+      bslib::card(
+        full_screen = TRUE,
+        bslib::card_header("Group-specific path coefficients"),
+        bslib::card_body(DT::DTOutput(ns("paths_table")))
+      ),
+      bslib::card(
+        full_screen = TRUE,
+        bslib::card_header("Analysis log"),
+        bslib::card_body(DT::DTOutput(ns("log_table")))
+      )
     ),
+
     bslib::card(
       bslib::card_header("Export"),
-      bslib::card_body(shiny::downloadButton(ns("download_results"), "Download results (.xlsx)", class = "btn-success btn-compact"))
+      bslib::card_body(
+        shiny::downloadButton(
+          ns("download_results"), "Download results (.xlsx)",
+          class = "btn-success btn-compact"
+        )
+      )
     )
   )
 }
@@ -63,32 +91,70 @@ mod_micom_mga_server <- function(id, analysis_data_aug_rv, model_lavaan, result_
 
     empty_dt <- function(message) {
       DT::datatable(
-        data.frame(Message = message), rownames = FALSE,
-        options = list(dom = "t", paging = FALSE), escape = TRUE
+        data.frame(Message = message, check.names = FALSE),
+        rownames = FALSE,
+        options = list(dom = "t", paging = FALSE),
+        escape = TRUE
       )
     }
 
-    segment_data <- function(data, variable, processing, bins) {
+    make_group_factor <- function(data, variable, processing, bins) {
       x <- data[[variable]]
+
       if (processing == "factor") {
-        grp <- as.factor(x)
-      } else if (processing == "character") {
-        grp <- as.factor(trimws(as.character(x)))
-      } else if (processing == "quantile") {
-        x <- suppressWarnings(as.numeric(x))
-        probs <- seq(0, 1, length.out = bins + 1)
-        cuts <- unique(stats::quantile(x, probs = probs, na.rm = TRUE, type = 7))
-        if (length(cuts) < 3) stop("The selected variable does not have enough distinct values for the requested quantile groups.")
-        grp <- cut(x, breaks = cuts, include.lowest = TRUE, ordered_result = TRUE)
-      } else {
-        x <- suppressWarnings(as.numeric(x))
-        if (length(unique(stats::na.omit(x))) < 2) stop("The selected variable does not have enough distinct numeric values.")
-        grp <- cut(x, breaks = bins, include.lowest = TRUE, ordered_result = TRUE)
+        return(droplevels(as.factor(x)))
       }
-      as.factor(grp)
+
+      if (processing == "character") {
+        x <- trimws(as.character(x))
+        x[!nzchar(x)] <- NA_character_
+        return(droplevels(as.factor(x)))
+      }
+
+      x <- suppressWarnings(as.numeric(x))
+      if (sum(!is.na(x)) < 2L || length(unique(stats::na.omit(x))) < 2L) {
+        stop("The selected segmentation variable does not have enough valid numeric values.")
+      }
+
+      if (processing == "quantile") {
+        probs <- seq(0, 1, length.out = bins + 1L)
+        breaks <- unique(stats::quantile(x, probs = probs, na.rm = TRUE, type = 7))
+        if (length(breaks) < 3L) {
+          stop("The selected variable does not have enough distinct values for the requested quantile groups.")
+        }
+        return(droplevels(cut(x, breaks = breaks, include.lowest = TRUE, ordered_result = TRUE)))
+      }
+
+      return(droplevels(cut(x, breaks = bins, include.lowest = TRUE, ordered_result = TRUE)))
     }
 
-    extract_pvalues <- function(x) {
+    extract_structural_paths <- function(model) {
+      lines <- trimws(unlist(strsplit(as.character(model), "\n", fixed = TRUE), use.names = FALSE))
+      lines <- lines[nzchar(lines)]
+      lines <- lines[
+        grepl("~", lines, fixed = TRUE) &
+          !grepl("=~", lines, fixed = TRUE) &
+          !grepl("<~", lines, fixed = TRUE)
+      ]
+
+      paths <- character(0)
+      for (line in lines) {
+        parts <- strsplit(line, "~", fixed = TRUE)[[1]]
+        if (length(parts) != 2L) next
+
+        target <- trimws(parts[1])
+        predictors <- trimws(unlist(strsplit(parts[2], "+", fixed = TRUE), use.names = FALSE))
+        predictors <- predictors[nzchar(predictors)]
+
+        if (nzchar(target) && length(predictors)) {
+          paths <- c(paths, paste0(target, " ~ ", predictors))
+        }
+      }
+
+      unique(paths)
+    }
+
+    normalize_comparisons <- function(x) {
       if (is.null(x)) return(list())
       if (!is.list(x)) return(list(Comparison = x))
       if ("none" %in% names(x)) x <- x[["none"]]
@@ -96,76 +162,173 @@ mod_micom_mga_server <- function(id, analysis_data_aug_rv, model_lavaan, result_
       x
     }
 
-    comparison_label <- function(x) gsub("_", " versus ", as.character(x), fixed = TRUE)
+    comparison_label <- function(x) {
+      gsub("_", " versus ", as.character(x), fixed = TRUE)
+    }
 
     flatten_micom <- function(micom, alpha = 0.05) {
-      if (is.null(micom) || !is.null(micom$error)) return(data.frame())
-      pvals <- tryCatch(extract_pvalues(micom$Step2$P_value), error = function(e) list())
+      if (is.null(micom) || !is.null(micom$error) || is.null(micom$Step2$P_value)) {
+        return(data.frame())
+      }
+
+      comparisons <- normalize_comparisons(micom$Step2$P_value)
       rows <- list()
-      for (cmp in names(pvals)) {
-        vals <- pvals[[cmp]]
-        vals <- unlist(vals, recursive = TRUE, use.names = TRUE)
-        if (!length(vals)) next
-        rows[[length(rows) + 1]] <- data.frame(
+
+      for (cmp in names(comparisons)) {
+        values <- unlist(comparisons[[cmp]], recursive = TRUE, use.names = TRUE)
+        if (!length(values)) next
+
+        rows[[length(rows) + 1L]] <- data.frame(
           Comparison = comparison_label(cmp),
-          Construct = names(vals),
-          `P-value` = as.numeric(vals),
-          `Compositional invariance` = ifelse(is.na(vals), NA, ifelse(vals >= alpha, "Supported", "Not supported")),
-          check.names = FALSE, stringsAsFactors = FALSE
+          Construct = names(values),
+          `P-value` = as.numeric(values),
+          `Compositional invariance` = ifelse(
+            is.na(values), NA_character_,
+            ifelse(as.numeric(values) >= alpha, "Supported", "Not supported")
+          ),
+          check.names = FALSE,
+          stringsAsFactors = FALSE
         )
       }
+
       if (!length(rows)) return(data.frame())
       do.call(rbind, rows)
     }
 
-    flatten_mga <- function(mga) {
-      if (is.null(mga) || !is.null(mga$error) || is.null(mga$Henseler$P_value)) return(data.frame())
-      pvals <- extract_pvalues(mga$Henseler$P_value)
+    flatten_mga <- function(mga_rows) {
+      if (is.null(mga_rows) || !nrow(mga_rows)) return(data.frame())
+      mga_rows
+    }
+
+    extract_group_paths <- function(fit_mg) {
+      group_names <- names(fit_mg)
       rows <- list()
-      for (cmp in names(pvals)) {
-        vals <- pvals[[cmp]]
-        vals <- unlist(vals, recursive = TRUE, use.names = TRUE)
-        if (!length(vals)) next
-        param <- names(vals)
-        path <- vapply(param, function(z) {
-          s <- strsplit(z, "~", fixed = TRUE)[[1]]
-          if (length(s) == 2) paste0(trimws(s[2]), " -> ", trimws(s[1])) else z
+
+      for (group_name in group_names) {
+        path_matrix <- tryCatch(
+          as.matrix(fit_mg[[group_name]]$Estimates$Path_estimates),
+          error = function(e) NULL
+        )
+        if (is.null(path_matrix)) next
+
+        tab <- as.data.frame(as.table(path_matrix), stringsAsFactors = FALSE)
+        names(tab) <- c("Target", "Source", "Estimate")
+        tab <- tab[!is.na(tab$Estimate) & tab$Estimate != 0, , drop = FALSE]
+        if (!nrow(tab)) next
+
+        tab$Group <- group_name
+        tab$Path <- paste0(tab$Source, " -> ", tab$Target)
+        rows[[length(rows) + 1L]] <- tab[, c("Group", "Path", "Estimate"), drop = FALSE]
+      }
+
+      if (!length(rows)) return(data.frame())
+      do.call(rbind, rows)
+    }
+
+    extract_henseler_pvalues <- function(mga_object) {
+      if (is.null(mga_object) || !is.null(mga_object$error) || is.null(mga_object$Henseler$P_value)) {
+        return(data.frame())
+      }
+
+      comparisons <- normalize_comparisons(mga_object$Henseler$P_value)
+      rows <- list()
+
+      for (cmp in names(comparisons)) {
+        values <- unlist(comparisons[[cmp]], recursive = TRUE, use.names = TRUE)
+        if (!length(values)) next
+
+        parameter_names <- names(values)
+        path_names <- vapply(parameter_names, function(parameter) {
+          pieces <- strsplit(parameter, "~", fixed = TRUE)[[1]]
+          if (length(pieces) == 2L) {
+            paste0(trimws(pieces[2]), " -> ", trimws(pieces[1]))
+          } else {
+            parameter
+          }
         }, character(1))
-        rows[[length(rows) + 1]] <- data.frame(
+
+        rows[[length(rows) + 1L]] <- data.frame(
           Comparison = comparison_label(cmp),
-          Path = path,
-          `P-value` = as.numeric(vals),
-          `Significant difference` = ifelse(is.na(vals), NA, ifelse(vals < 0.05 | vals > 0.95, "Yes", "No")),
-          check.names = FALSE, stringsAsFactors = FALSE
+          Path = path_names,
+          `P-value` = as.numeric(values),
+          `Significant difference` = ifelse(
+            is.na(values), NA_character_,
+            ifelse(as.numeric(values) < 0.05 | as.numeric(values) > 0.95, "Yes", "No")
+          ),
+          check.names = FALSE,
+          stringsAsFactors = FALSE
         )
       }
+
       if (!length(rows)) return(data.frame())
       do.call(rbind, rows)
     }
 
-    extract_group_paths <- function(fit) {
-      est <- tryCatch(fit$Estimates$Path_estimates, error = function(e) NULL)
-      if (is.null(est)) return(data.frame())
-      out <- as.data.frame(as.table(as.matrix(est)), stringsAsFactors = FALSE)
-      names(out) <- c("Target", "Source", "Estimate")
-      out <- out[!is.na(out$Estimate) & out$Estimate != 0, , drop = FALSE]
-      if (!nrow(out)) return(data.frame())
-      out$Path <- paste0(out$Source, " -> ", out$Target)
-      out[, c("Path", "Estimate"), drop = FALSE]
+    run_henseler_mga <- function(fit_mg, structural_paths, R, seed) {
+      if (!length(structural_paths)) {
+        return(list(
+          results = data.frame(),
+          error = "No structural paths were identified in the model."
+        ))
+      }
+
+      test_mgd <- get("testMGD", envir = asNamespace("cSEM"))
+      output_rows <- list()
+      errors <- character(0)
+
+      # cSEM accepts lavaan syntax in .parameters_to_compare. By submitting one
+      # equation at a time, this remains valid even if the model has many lines.
+      for (path_syntax in structural_paths) {
+        test_one <- tryCatch(
+          test_mgd(
+            fit_mg,
+            .parameters_to_compare = path_syntax,
+            .approach_mgd = "Henseler",
+            .R_bootstrap = R,
+            .seed = seed,
+            .eval_plan = "multisession",
+            .verbose = FALSE
+          ),
+          error = function(e) list(error = conditionMessage(e))
+        )
+
+        if (!is.null(test_one$error)) {
+          errors <- c(errors, paste0(path_syntax, ": ", test_one$error))
+          next
+        }
+
+        one_table <- extract_henseler_pvalues(test_one)
+        if (nrow(one_table)) output_rows[[length(output_rows) + 1L]] <- one_table
+      }
+
+      list(
+        results = if (length(output_rows)) do.call(rbind, output_rows) else data.frame(),
+        error = if (length(errors)) paste(errors, collapse = " | ") else NULL
+      )
     }
 
     shiny::observe({
       data <- analysis_data_aug_rv()
       choices <- if (is.null(data)) character(0) else colnames(data)
-      selected <- isolate(input$segment_var)
+      current <- isolate(input$segment_var)
+
       shiny::updateSelectInput(
-        session, "segment_var", choices = choices,
-        selected = if (!is.null(selected) && selected %in% choices) selected else if (length(choices)) choices[1] else character(0)
+        session,
+        "segment_var",
+        choices = choices,
+        selected = if (!is.null(current) && current %in% choices) {
+          current
+        } else if (length(choices)) {
+          choices[1]
+        } else {
+          character(0)
+        }
       )
     })
 
     shiny::observeEvent(input$btn_run_micom_mga, {
       shiny::req(analysis_data_aug_rv(), model_lavaan())
+
       data <- as.data.frame(analysis_data_aug_rv())
       model <- model_lavaan()
 
@@ -173,33 +336,45 @@ mod_micom_mga_server <- function(id, analysis_data_aug_rv, model_lavaan, result_
         shiny::showNotification("Define constructs and structural relations first.", type = "error")
         return()
       }
+
       if (is.null(input$segment_var) || !nzchar(input$segment_var)) {
         shiny::showNotification("Select a segmentation variable.", type = "error")
         return()
       }
 
-      out <- tryCatch({
-        grp <- segment_data(data, input$segment_var, input$segment_processing, input$segment_bins)
-        keep <- !is.na(grp)
-        data2 <- data[keep, , drop = FALSE]
-        grp <- droplevels(grp[keep])
-        counts <- table(grp)
-        valid_levels <- names(counts)[counts >= input$min_group_n]
-        excluded <- names(counts)[counts < input$min_group_n]
+      analysis_out <- tryCatch({
+        grouping <- make_group_factor(
+          data = data,
+          variable = input$segment_var,
+          processing = input$segment_processing,
+          bins = input$segment_bins
+        )
 
-        if (length(valid_levels) < 2) {
-          stop(sprintf("At least two groups with n >= %d are required. Current group sizes: %s",
-                       input$min_group_n, paste(names(counts), counts, sep = "=", collapse = "; ")))
+        keep_nonmissing <- !is.na(grouping)
+        data_grouped <- data[keep_nonmissing, , drop = FALSE]
+        grouping <- droplevels(grouping[keep_nonmissing])
+
+        observed_counts <- table(grouping)
+        included_levels <- names(observed_counts)[observed_counts >= input$min_group_n]
+        excluded_levels <- names(observed_counts)[observed_counts < input$min_group_n]
+
+        if (length(included_levels) < 2L) {
+          stop(sprintf(
+            "At least two groups with n >= %d are required. Observed group sizes: %s",
+            input$min_group_n,
+            paste(names(observed_counts), observed_counts, sep = "=", collapse = "; ")
+          ))
         }
 
-        idx <- grp %in% valid_levels
-        data2 <- data2[idx, , drop = FALSE]
-        grp <- droplevels(grp[idx])
-        group_data <- split(data2, grp, drop = TRUE)
+        keep_included <- grouping %in% included_levels
+        data_grouped <- data_grouped[keep_included, , drop = FALSE]
+        grouping <- droplevels(grouping[keep_included])
+        group_data <- split(data_grouped, grouping, drop = TRUE)
         group_data <- lapply(group_data, as.data.frame)
 
-        shiny::withProgress(message = "Running MICOM and MGA...", value = 0.15, {
-          shiny::incProgress(0.25, detail = "Estimating the multigroup PLS-SEM model")
+        shiny::withProgress(message = "Running MICOM and MGA...", value = 0.05, {
+          shiny::incProgress(0.20, detail = "Estimating multigroup PLS-SEM model")
+
           fit_mg <- cSEM::csem(
             .data = group_data,
             .model = model,
@@ -212,142 +387,205 @@ mod_micom_mga_server <- function(id, analysis_data_aug_rv, model_lavaan, result_
             .eval_plan = "multisession"
           )
 
-          shiny::incProgress(0.35, detail = "Testing compositional invariance (MICOM)")
+          shiny::incProgress(0.25, detail = "Testing compositional invariance (MICOM)")
           micom <- tryCatch(
             cSEM::testMICOM(
-              fit_mg, .R = max(50, input$n_boot), .seed = input$seed,
-              .approach_p_adjust = "none", .verbose = FALSE
+              fit_mg,
+              .R = max(50L, as.integer(input$n_boot)),
+              .seed = as.integer(input$seed),
+              .approach_p_adjust = "none",
+              .verbose = FALSE
             ),
             error = function(e) list(error = conditionMessage(e))
           )
 
-          shiny::incProgress(0.20, detail = "Testing path differences (Henseler MGA)")
-          structural_lines <- trimws(strsplit(model, "\n", fixed = TRUE)[[1]])
-          structural_lines <- structural_lines[
-            grepl("~", structural_lines, fixed = TRUE) &
-              !grepl("=~", structural_lines, fixed = TRUE) &
-              !grepl("<~", structural_lines, fixed = TRUE)
-          ]
+          shiny::incProgress(0.35, detail = "Testing structural path differences (Henseler MGA)")
+          structural_paths <- extract_structural_paths(model)
+          mga_run <- run_henseler_mga(
+            fit_mg = fit_mg,
+            structural_paths = structural_paths,
+            R = max(50L, as.integer(input$n_boot)),
+            seed = as.integer(input$seed)
+          )
 
-          parameters <- paste(structural_lines, collapse = "\n")
+          shiny::incProgress(0.10, detail = "Preparing output tables")
+          group_counts <- data.frame(
+            Group = names(group_data),
+            N = vapply(group_data, nrow, integer(1)),
+            stringsAsFactors = FALSE
+          )
 
-
-          mga <- if (nzchar(parameters)) {
-            tryCatch(
-              get("testMGD", envir = asNamespace("cSEM"))(
-                fit_mg,
-                .parameters_to_compare = parameters,
-                .approach_mgd = "Henseler",
-                .R_bootstrap = max(50, input$n_boot),
-                .eval_plan = "multisession",
-                .verbose = FALSE
-              ),
-              error = function(e) list(error = conditionMessage(e))
-            )
-          } else list(error = "No structural paths were found in the model.")
-
-          shiny::incProgress(0.05, detail = "Preparing results")
-          paths <- do.call(rbind, lapply(names(fit_mg), function(g) {
-            p <- extract_group_paths(fit_mg[[g]])
-            if (!nrow(p)) return(NULL)
-            p$Group <- g
-            p[, c("Group", "Path", "Estimate"), drop = FALSE]
-          }))
-
-          log <- data.frame(
-            Item = c("Segmentation variable", "Processing", "Groups analysed", "Observations analysed", "Excluded groups", "MICOM bootstrap resamples", "MGA bootstrap resamples"),
+          group_text <- paste0(group_counts$Group, " (n=", group_counts$N, ")")
+          log_table <- data.frame(
+            Item = c(
+              "Segmentation variable",
+              "Processing",
+              "Groups analysed",
+              "Observations analysed",
+              "Excluded groups",
+              "MICOM bootstrap resamples",
+              "MGA bootstrap resamples",
+              "Structural paths tested"
+            ),
             Value = c(
               input$segment_var,
               input$segment_processing,
-              paste(names(group_data), vapply(group_data, nrow, integer(1)), sep = " (n=", collapse = "; "),
-              nrow(data2),
-              if (length(excluded)) paste(excluded, collapse = "; ") else "None",
-              max(50, input$n_boot),
-              max(50, input$n_boot)
+              paste(group_text, collapse = "; "),
+              as.character(nrow(data_grouped)),
+              if (length(excluded_levels)) paste(excluded_levels, collapse = "; ") else "None",
+              as.character(max(50L, as.integer(input$n_boot))),
+              as.character(max(50L, as.integer(input$n_boot))),
+              paste(structural_paths, collapse = "; ")
             ),
             stringsAsFactors = FALSE
           )
-          log$Value[3] <- paste0(gsub("$", ")", log$Value[3]))
 
           list(
-            group_counts = data.frame(Group = names(group_data), N = vapply(group_data, nrow, integer(1)), stringsAsFactors = FALSE),
-            excluded = excluded,
+            group_counts = group_counts,
+            excluded_groups = excluded_levels,
             micom = micom,
-            mga = mga,
             micom_table = flatten_micom(micom),
-            mga_table = flatten_mga(mga),
-            paths_table = paths,
-            log_table = log
+            mga_error = mga_run$error,
+            mga_table = flatten_mga(mga_run$results),
+            paths_table = extract_group_paths(fit_mg),
+            log_table = log_table
           )
         })
       }, error = function(e) list(error = conditionMessage(e)))
 
-      if (!is.null(out$error)) {
+      if (!is.null(analysis_out$error)) {
         results_rv(NULL)
-        shiny::showNotification(paste("MICOM/MGA analysis failed:", out$error), type = "error", duration = 10)
+        shiny::showNotification(
+          paste("MICOM/MGA analysis failed:", analysis_out$error),
+          type = "error", duration = 10
+        )
       } else {
-        results_rv(out)
-        shiny::showNotification("MICOM and Henseler MGA completed successfully.", type = "message")
+        results_rv(analysis_out)
+        if (!is.null(analysis_out$mga_error) && !nrow(analysis_out$mga_table)) {
+          shiny::showNotification(
+            "MICOM completed, but MGA could not be calculated for the selected paths.",
+            type = "warning", duration = 10
+          )
+        } else {
+          shiny::showNotification("MICOM and Henseler MGA completed successfully.", type = "message")
+        }
       }
     })
 
     output$group_summary <- shiny::renderUI({
-      x <- results_rv()
-      if (is.null(x)) return(shiny::tags$div(class = "small-muted", "Select a segmentation variable and run the analysis."))
-      labels <- paste0(x$group_counts$Group, " (n=", x$group_counts$N, ")")
+      out <- results_rv()
+      if (is.null(out)) {
+        return(shiny::tags$div(
+          class = "small-muted",
+          "Select a segmentation variable and run the analysis."
+        ))
+      }
+
+      labels <- paste0(out$group_counts$Group, " (n=", out$group_counts$N, ")")
       shiny::tags$div(
         class = "small-muted",
-        shiny::tags$b("Groups analysed: "), paste(labels, collapse = " · "),
-        if (length(x$excluded)) shiny::tags$span(" | Excluded for insufficient size: ", paste(x$excluded, collapse = ", "))
+        shiny::tags$b("Groups analysed: "),
+        paste(labels, collapse = " · "),
+        if (length(out$excluded_groups)) {
+          shiny::tags$span(" | Excluded for insufficient size: ", paste(out$excluded_groups, collapse = ", "))
+        }
       )
     })
 
     output$micom_table <- DT::renderDT({
-      x <- results_rv()
-      if (is.null(x) || !nrow(x$micom_table)) return(empty_dt(if (!is.null(x$micom$error)) paste("MICOM failed:", x$micom$error) else "No MICOM Step 2 results available."))
-      DT::datatable(x$micom_table, rownames = FALSE, options = list(pageLength = 15, scrollX = TRUE, dom = "tip")) |>
+      out <- results_rv()
+      if (is.null(out) || !nrow(out$micom_table)) {
+        message <- if (!is.null(out) && !is.null(out$micom$error)) {
+          paste("MICOM failed:", out$micom$error)
+        } else {
+          "No MICOM Step 2 results available."
+        }
+        return(empty_dt(message))
+      }
+
+      DT::datatable(
+        out$micom_table,
+        rownames = FALSE,
+        options = list(pageLength = 15, scrollX = TRUE, dom = "tip")
+      ) |>
         DT::formatRound("P-value", 3) |>
-        DT::formatStyle("Compositional invariance", color = DT::styleEqual(c("Supported", "Not supported"), c("#198754", "#DC3545")))
+        DT::formatStyle(
+          "Compositional invariance",
+          color = DT::styleEqual(c("Supported", "Not supported"), c("#198754", "#DC3545"))
+        )
     })
 
     output$mga_table <- DT::renderDT({
-      x <- results_rv()
-      if (is.null(x) || !nrow(x$mga_table)) return(empty_dt(if (!is.null(x$mga$error)) paste("MGA failed:", x$mga$error) else "No Henseler MGA results available."))
-      DT::datatable(x$mga_table, rownames = FALSE, options = list(pageLength = 15, scrollX = TRUE, dom = "tip")) |>
+      out <- results_rv()
+      if (is.null(out) || !nrow(out$mga_table)) {
+        message <- if (!is.null(out) && !is.null(out$mga_error)) {
+          paste("MGA failed:", out$mga_error)
+        } else {
+          "No Henseler MGA results available."
+        }
+        return(empty_dt(message))
+      }
+
+      DT::datatable(
+        out$mga_table,
+        rownames = FALSE,
+        options = list(pageLength = 15, scrollX = TRUE, dom = "tip")
+      ) |>
         DT::formatRound("P-value", 3) |>
-        DT::formatStyle("Significant difference", color = DT::styleEqual("Yes", "#DC3545"))
+        DT::formatStyle(
+          "Significant difference",
+          color = DT::styleEqual("Yes", "#DC3545")
+        )
     })
 
     output$paths_table <- DT::renderDT({
-      x <- results_rv()
-      if (is.null(x) || is.null(x$paths_table) || !nrow(x$paths_table)) return(empty_dt("No group-specific path estimates available."))
-      DT::datatable(x$paths_table, rownames = FALSE, options = list(pageLength = 15, scrollX = TRUE, dom = "tip")) |>
+      out <- results_rv()
+      if (is.null(out) || is.null(out$paths_table) || !nrow(out$paths_table)) {
+        return(empty_dt("No group-specific structural path estimates are available."))
+      }
+
+      DT::datatable(
+        out$paths_table,
+        rownames = FALSE,
+        options = list(pageLength = 15, scrollX = TRUE, dom = "tip")
+      ) |>
         DT::formatRound("Estimate", 3)
     })
 
     output$log_table <- DT::renderDT({
-      x <- results_rv()
-      if (is.null(x)) return(empty_dt("No analysis has been run."))
-      DT::datatable(x$log_table, rownames = FALSE, options = list(dom = "t", paging = FALSE), escape = TRUE)
+      out <- results_rv()
+      if (is.null(out)) return(empty_dt("No analysis has been run."))
+
+      DT::datatable(
+        out$log_table,
+        rownames = FALSE,
+        options = list(dom = "t", paging = FALSE),
+        escape = TRUE
+      )
     })
 
     output$download_results <- shiny::downloadHandler(
       filename = function() paste0("MICOM_MGA_", Sys.Date(), ".xlsx"),
       content = function(file) {
-        x <- results_rv()
-        shiny::req(x)
-        wb <- openxlsx::createWorkbook()
-        openxlsx::addWorksheet(wb, "Groups")
-        openxlsx::writeData(wb, "Groups", x$group_counts)
-        openxlsx::addWorksheet(wb, "MICOM_Step2")
-        openxlsx::writeData(wb, "MICOM_Step2", x$micom_table)
-        openxlsx::addWorksheet(wb, "Henseler_MGA")
-        openxlsx::writeData(wb, "Henseler_MGA", x$mga_table)
-        openxlsx::addWorksheet(wb, "Group_paths")
-        openxlsx::writeData(wb, "Group_paths", x$paths_table)
-        openxlsx::addWorksheet(wb, "Log")
-        openxlsx::writeData(wb, "Log", x$log_table)
-        openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
+        out <- results_rv()
+        shiny::req(out)
+
+        workbook <- openxlsx::createWorkbook()
+        sheets <- list(
+          Groups = out$group_counts,
+          MICOM_Step2 = out$micom_table,
+          Henseler_MGA = out$mga_table,
+          Group_paths = out$paths_table,
+          Log = out$log_table
+        )
+
+        for (sheet_name in names(sheets)) {
+          openxlsx::addWorksheet(workbook, sheet_name)
+          openxlsx::writeData(workbook, sheet_name, sheets[[sheet_name]])
+          openxlsx::setColWidths(workbook, sheet_name, cols = 1:ncol(sheets[[sheet_name]]), widths = "auto")
+        }
+
+        openxlsx::saveWorkbook(workbook, file, overwrite = TRUE)
       }
     )
 
